@@ -4,22 +4,27 @@ apply plugin: 'signing'
 
 group = "mil.nga.geopackage"
 archivesBaseName = "geopackage-android"
-version = "3.0.3"
+version = "4.0.1"
 def remotePublish = false
 
 android {
-    compileSdkVersion 27
+    compileSdkVersion 29
 
     defaultConfig {
-        minSdkVersion 14
-        targetSdkVersion 27
+        minSdkVersion 16
+        targetSdkVersion 29
 
         testApplicationId 'mil.nga.geopackage.test'
-        testInstrumentationRunner "android.test.InstrumentationTestRunner"
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
     configurations {
         javadocDeps
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 
     buildTypes {
@@ -42,29 +47,30 @@ android {
         source = android.sourceSets.main.java.srcDirs
         classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
         classpath += configurations.javadocDeps
-        classpath += files("${android.sdkDirectory}/extras/android/support/v13/android-support-v13.jar")
-        options.links("http://ngageoint.github.io/geopackage-core-java/docs/api/");
-        options.links("http://ngageoint.github.io/simple-features-wkb-java/docs/api/");
-        options.links("http://ngageoint.github.io/simple-features-geojson-java/docs/api/");
-        options.links("http://ngageoint.github.io/simple-features-proj-java/docs/api/");
-        options.links("http://ngageoint.github.io/simple-features-java/docs/api/");
-        options.links("http://ngageoint.github.io/tiff-java/docs/api/");
-        options.links("http://ormlite.com/javadoc/ormlite-core/");
-        options.links("http://ormlite.com/javadoc/ormlite-android/");
-        options.links("http://docs.oracle.com/javase/7/docs/api/");
-        options.links("http://hjg.com.ar/pngj/apidocs/");
-        options.linksOffline("http://d.android.com/reference","${android.sdkDirectory}/docs/reference");
+        options.links "https://ngageoint.github.io/geopackage-core-java/docs/api/"
+        options.links "https://ngageoint.github.io/simple-features-wkb-java/docs/api/"
+        options.links "https://ngageoint.github.io/simple-features-wkt-java/docs/api/"
+        options.links "https://ngageoint.github.io/simple-features-geojson-java/docs/api/"
+        options.links "https://ngageoint.github.io/simple-features-proj-java/docs/api/"
+        options.links "https://ngageoint.github.io/simple-features-java/docs/api/"
+        options.links "https://ngageoint.github.io/ogc-api-features-json-java/docs/api/"
+        options.links "https://ngageoint.github.io/tiff-java/docs/api/"
+        options.links "http://ormlite.com/javadoc/ormlite-core/"
+        options.links "http://ormlite.com/javadoc/ormlite-android/"
+        options.links "https://docs.oracle.com/javase/8/docs/api/"
+        options.links "http://hjg.com.ar/pngj/apidocs/"
+        options.linksOffline "https://d.android.com/reference","${android.sdkDirectory}/docs/reference"
         destinationDir = file("../javadoc/")
         failOnError false
     }
 
     task javadocJar(type: Jar) {
-        classifier = 'javadoc'
+        archiveClassifier.set("javadoc")
         from javadoc
     }
 
     task sourcesJar(type: Jar) {
-        classifier = 'sources'
+        archiveClassifier.set("sources")
         from sourceSets.main.java.srcDirs
     }
 
@@ -147,15 +153,16 @@ android {
 }
 
 dependencies {
-    api 'com.android.support:support-v13:27.1.1'
+    api 'androidx.appcompat:appcompat:1.1.0'
     api 'com.j256.ormlite:ormlite-android:5.1'
-    api 'mil.nga.geopackage:geopackage-core:3.0.2'
+    api 'mil.nga.geopackage:geopackage-core:4.0.0'
     api 'ar.com.hjg:pngj:2.1.0'
-    api 'mil.nga:tiff:2.0.0'
-    api 'mil.nga.sf:sf-geojson:2.0.0'
+    api 'mil.nga:tiff:2.0.2'
+    api 'mil.nga:sqlite-android:3320300'
     javadocDeps 'com.j256.ormlite:ormlite-android:5.1',
-            'mil.nga.geopackage:geopackage-core:3.0.2',
+            'mil.nga.geopackage:geopackage-core:4.0.0',
             'ar.com.hjg:pngj:2.1.0',
-            'mil.nga:tiff:2.0.0',
-            'mil.nga.sf:sf-geojson:2.0.0'
+            'mil.nga:tiff:2.0.2'
+    androidTestImplementation 'androidx.test:runner:1.2.0'
+    androidTestImplementation 'androidx.test:rules:1.2.0'
 }

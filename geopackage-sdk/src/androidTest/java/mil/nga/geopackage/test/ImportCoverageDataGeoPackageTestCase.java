@@ -1,11 +1,13 @@
 package mil.nga.geopackage.test;
 
+import org.junit.After;
+
 import java.io.File;
 
 import mil.nga.geopackage.GeoPackage;
 import mil.nga.geopackage.GeoPackageException;
 import mil.nga.geopackage.GeoPackageManager;
-import mil.nga.geopackage.factory.GeoPackageFactory;
+import mil.nga.geopackage.GeoPackageFactory;
 
 /**
  * Abstract Test Case for Imported Tiled Gridded Coverage Data GeoPackages
@@ -48,18 +50,14 @@ public abstract class ImportCoverageDataGeoPackageTestCase extends
         return geoPackage;
     }
 
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    protected void tearDown() throws Exception {
+    @After
+    public void tearDown() throws Exception {
 
         // Close
         if (geoPackage != null) {
             geoPackage.close();
         }
 
-        super.tearDown();
     }
 
 }

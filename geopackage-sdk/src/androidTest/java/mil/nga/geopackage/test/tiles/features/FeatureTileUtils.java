@@ -11,13 +11,14 @@ import java.util.Date;
 
 import mil.nga.geopackage.BoundingBox;
 import mil.nga.geopackage.GeoPackage;
-import mil.nga.geopackage.core.contents.Contents;
-import mil.nga.geopackage.core.contents.ContentsDao;
+import mil.nga.geopackage.contents.Contents;
+import mil.nga.geopackage.contents.ContentsDao;
+import mil.nga.geopackage.db.TableColumnKey;
 import mil.nga.geopackage.features.columns.GeometryColumns;
 import mil.nga.geopackage.features.user.FeatureDao;
 import mil.nga.geopackage.features.user.FeatureRow;
+import mil.nga.geopackage.features.user.FeatureTableMetadata;
 import mil.nga.geopackage.geom.GeoPackageGeometryData;
-import mil.nga.geopackage.schema.TableColumnKey;
 import mil.nga.geopackage.tiles.features.DefaultFeatureTiles;
 import mil.nga.geopackage.tiles.features.FeatureTilePointIcon;
 import mil.nga.geopackage.tiles.features.FeatureTiles;
@@ -47,9 +48,11 @@ public class FeatureTileUtils {
         geometryColumns.setGeometryType(GeometryType.GEOMETRY);
         geometryColumns.setZ((byte) 0);
         geometryColumns.setM((byte) 0);
+        geometryColumns
+                .setSrsId(ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM);
 
-        geoPackage.createFeatureTableWithMetadata(
-                geometryColumns, boundingBox, ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM);
+        geoPackage.createFeatureTable(
+                FeatureTableMetadata.create(geometryColumns, boundingBox));
 
         FeatureDao featureDao = geoPackage.getFeatureDao(geometryColumns);
 
@@ -96,7 +99,7 @@ public class FeatureTileUtils {
      */
     public static FeatureTiles createFeatureTiles(Context context, GeoPackage geoPackage, FeatureDao featureDao, boolean useIcon) {
 
-        FeatureTiles featureTiles = new DefaultFeatureTiles(context, featureDao);
+        FeatureTiles featureTiles = new DefaultFeatureTiles(context, featureDao, context.getResources().getDisplayMetrics().density);
 
         Paint pointPaint = featureTiles.getPointPaint();
         if (useIcon) {
@@ -108,16 +111,19 @@ public class FeatureTileUtils {
             pointPaint.setColor(Color.BLUE);
         }
 
-        Paint linePaint = featureTiles.getLinePaint();
+        Paint linePaint = featureTiles.getLinePaintCopy();
         linePaint.setColor(Color.GREEN);
+        featureTiles.setLinePaint(linePaint);
 
-        Paint polygonPaint = featureTiles.getPolygonPaint();
+        Paint polygonPaint = featureTiles.getPolygonPaintCopy();
         polygonPaint.setColor(Color.RED);
+        featureTiles.setPolygonPaint(polygonPaint);
 
         featureTiles.setFillPolygon(true);
-        Paint polygonFillPaint = featureTiles.getPolygonFillPaint();
+        Paint polygonFillPaint = featureTiles.getPolygonFillPaintCopy();
         polygonFillPaint.setColor(Color.RED);
         polygonFillPaint.setAlpha(50);
+        featureTiles.setPolygonFillPaint(polygonFillPaint);
 
         featureTiles.calculateDrawOverlap();
 
@@ -173,19 +179,17 @@ public class FeatureTileUtils {
     }
 
     public static void setPoint(FeatureRow featureRow, double x, double y) {
-        GeoPackageGeometryData geomData = new GeoPackageGeometryData(
-                ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM);
-        Point point = new Point(false, false, x, y);
-        geomData.setGeometry(point);
+        GeoPackageGeometryData geomData = GeoPackageGeometryData.create(
+                ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM,
+                new Point(x, y));
         featureRow.setGeometry(geomData);
     }
 
     public static long insertLine(FeatureDao featureDao, double[][] points) {
         FeatureRow featureRow = featureDao.newRow();
-        GeoPackageGeometryData geomData = new GeoPackageGeometryData(
-                ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM);
-        LineString lineString = getLineString(points);
-        geomData.setGeometry(lineString);
+        GeoPackageGeometryData geomData = GeoPackageGeometryData.create(
+                ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM,
+                getLineString(points));
         featureRow.setGeometry(geomData);
         return featureDao.insert(featureRow);
     }
@@ -201,20 +205,19 @@ public class FeatureTileUtils {
 
     public static long insertPolygon(FeatureDao featureDao, double[][]... points) {
         FeatureRow featureRow = featureDao.newRow();
-        GeoPackageGeometryData geomData = new GeoPackageGeometryData(
-                ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM);
-        Polygon polygon = new Polygon(false, false);
+        Polygon polygon = new Polygon();
+        GeoPackageGeometryData geomData = GeoPackageGeometryData.create(
+                ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM, polygon);
         for (double[][] ring : points) {
             LineString lineString = getLineString(ring);
             polygon.addRing(lineString);
         }
-        geomData.setGeometry(polygon);
         featureRow.setGeometry(geomData);
         return featureDao.insert(featureRow);
     }
 
     public static void updateLastChange(GeoPackage geoPackage, FeatureDao featureDao) throws SQLException {
-        Contents contents = featureDao.getGeometryColumns().getContents();
+        Contents contents = featureDao.getContents();
         contents.setLastChange(new Date());
         ContentsDao contentsDao = geoPackage.getContentsDao();
         contentsDao.update(contents);

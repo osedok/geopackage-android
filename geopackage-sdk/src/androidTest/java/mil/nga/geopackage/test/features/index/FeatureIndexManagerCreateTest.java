@@ -1,5 +1,7 @@
 package mil.nga.geopackage.test.features.index;
 
+import org.junit.Test;
+
 import java.sql.SQLException;
 
 import mil.nga.geopackage.test.CreateGeoPackageTestCase;
@@ -18,20 +20,45 @@ public class FeatureIndexManagerCreateTest extends CreateGeoPackageTestCase {
 
     }
 
+    @Override
+    public boolean allowEmptyFeatures() {
+        return false;
+    }
+
     /**
      * Test index
      *
      * @throws SQLException
      */
+    @Test
     public void testIndex() throws SQLException {
 
         FeatureIndexManagerUtils.testIndex(activity, geoPackage);
 
     }
 
-    @Override
-    public boolean allowEmptyFeatures() {
-        return false;
+    /**
+     * Test large index
+     *
+     * @throws SQLException upon error
+     */
+    @Test
+    public void testLargeIndex() throws SQLException {
+
+        FeatureIndexManagerUtils.testLargeIndex(activity, geoPackage, 20000, false);
+
+    }
+
+    /**
+     * Test timed index
+     *
+     * @throws SQLException upon error
+     */
+    @Test
+    public void testTimedIndex() throws SQLException {
+
+        FeatureIndexManagerUtils.testTimedIndex(activity, geoPackage, false, false);
+
     }
 
 }

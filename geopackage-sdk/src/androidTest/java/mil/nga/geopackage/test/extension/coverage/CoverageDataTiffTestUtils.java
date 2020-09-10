@@ -9,12 +9,11 @@ import java.util.List;
 
 import mil.nga.geopackage.BoundingBox;
 import mil.nga.geopackage.GeoPackage;
-import mil.nga.geopackage.core.contents.Contents;
-import mil.nga.geopackage.core.contents.ContentsDataType;
-import mil.nga.geopackage.core.srs.SpatialReferenceSystem;
+import mil.nga.geopackage.contents.Contents;
 import mil.nga.geopackage.extension.ExtensionScopeType;
 import mil.nga.geopackage.extension.Extensions;
 import mil.nga.geopackage.extension.ExtensionsDao;
+import mil.nga.geopackage.extension.coverage.CoverageData;
 import mil.nga.geopackage.extension.coverage.CoverageDataAlgorithm;
 import mil.nga.geopackage.extension.coverage.CoverageDataResults;
 import mil.nga.geopackage.extension.coverage.CoverageDataTiff;
@@ -23,6 +22,7 @@ import mil.nga.geopackage.extension.coverage.GriddedCoverage;
 import mil.nga.geopackage.extension.coverage.GriddedCoverageDataType;
 import mil.nga.geopackage.extension.coverage.GriddedCoverageEncodingType;
 import mil.nga.geopackage.extension.coverage.GriddedTile;
+import mil.nga.geopackage.srs.SpatialReferenceSystem;
 import mil.nga.geopackage.test.CreateCoverageDataTiffGeoPackageTestCase.CoverageDataTiffValues;
 import mil.nga.geopackage.tiles.TileBoundingBoxUtils;
 import mil.nga.geopackage.tiles.matrix.TileMatrix;
@@ -94,10 +94,8 @@ public class CoverageDataTiffTestUtils {
             TestCase.assertNotNull(contents);
             TestCase.assertEquals(tileMatrixSet.getTableName(),
                     contents.getTableName());
-            TestCase.assertEquals(ContentsDataType.GRIDDED_COVERAGE,
-                    contents.getDataType());
-            TestCase.assertEquals(ContentsDataType.GRIDDED_COVERAGE.getName(),
-                    contents.getDataTypeString());
+            TestCase.assertEquals(CoverageData.GRIDDED_COVERAGE,
+                    contents.getDataTypeName());
             TestCase.assertNotNull(contents.getLastChange());
 
             // Test the contents SRS

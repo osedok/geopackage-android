@@ -5,25 +5,30 @@ import android.graphics.Bitmap;
 import android.graphics.Bitmap.CompressFormat;
 import android.graphics.Bitmap.Config;
 import android.graphics.BitmapFactory.Options;
+import android.util.Log;
 import android.util.SparseArray;
 
-import org.osgeo.proj4j.units.DegreeUnit;
+import org.locationtech.proj4j.units.Units;
 
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 import mil.nga.geopackage.BoundingBox;
 import mil.nga.geopackage.GeoPackage;
 import mil.nga.geopackage.GeoPackageException;
-import mil.nga.geopackage.core.contents.Contents;
-import mil.nga.geopackage.core.contents.ContentsDao;
-import mil.nga.geopackage.core.srs.SpatialReferenceSystem;
-import mil.nga.geopackage.core.srs.SpatialReferenceSystemDao;
-import mil.nga.geopackage.extension.scale.TileScaling;
-import mil.nga.geopackage.extension.scale.TileTableScaling;
+import mil.nga.geopackage.contents.Contents;
+import mil.nga.geopackage.contents.ContentsDao;
+import mil.nga.geopackage.extension.nga.scale.TileScaling;
+import mil.nga.geopackage.extension.nga.scale.TileTableScaling;
 import mil.nga.geopackage.io.BitmapConverter;
 import mil.nga.geopackage.io.GeoPackageProgress;
+import mil.nga.geopackage.srs.SpatialReferenceSystem;
+import mil.nga.geopackage.srs.SpatialReferenceSystemDao;
 import mil.nga.geopackage.tiles.matrix.TileMatrix;
 import mil.nga.geopackage.tiles.matrix.TileMatrixDao;
 import mil.nga.geopackage.tiles.matrix.TileMatrixKey;
@@ -33,6 +38,7 @@ import mil.nga.geopackage.tiles.user.TileCursor;
 import mil.nga.geopackage.tiles.user.TileDao;
 import mil.nga.geopackage.tiles.user.TileRow;
 import mil.nga.geopackage.tiles.user.TileTable;
+import mil.nga.geopackage.tiles.user.TileTableMetadata;
 import mil.nga.sf.proj.Projection;
 import mil.nga.sf.proj.ProjectionConstants;
 import mil.nga.sf.proj.ProjectionFactory;
@@ -86,6 +92,11 @@ public abstract class TileGenerator {
     private final SparseArray<TileGrid> tileGrids = new SparseArray<>();
 
     /**
+     * Tile bounding boxes by zoom level
+     */
+    private final SparseArray<BoundingBox> tileBounds = new SparseArray<>();
+
+    /**
      * Tile bounding box
      */
     protected BoundingBox boundingBox;
@@ -111,11 +122,11 @@ public abstract class TileGenerator {
     private Options options = null;
 
     /**
-     * True when generating tiles in Google tile format, false when generating
-     * GeoPackage format where rows and columns do not match the Google row &
+     * True when generating tiles in XYZ tile format, false when generating
+     * GeoPackage format where rows and columns do not match the XYZ row &
      * column coordinates
      */
-    private boolean googleTiles = false;
+    private boolean xyzTiles = false;
 
     /**
      * Tile grid bounding box
@@ -136,6 +147,11 @@ public abstract class TileGenerator {
      * Tile scaling settings
      */
     private TileScaling scaling = null;
+
+    /**
+     * Skip existing tiles
+     */
+    private boolean skipExisting = false;
 
     /**
      * Constructor
@@ -200,6 +216,27 @@ public abstract class TileGenerator {
      */
     public int getMaxZoom() {
         return maxZoom;
+    }
+
+    /**
+     * Get bounding box
+     *
+     * @return bounding box
+     * @since 3.2.0
+     */
+    public BoundingBox getBoundingBox() {
+        return boundingBox;
+    }
+
+    /**
+     * Get the bounding box, possibly expanded for the zoom level
+     *
+     * @param zoom zoom level
+     * @return original or expanded bounding box
+     * @since 3.2.0
+     */
+    public BoundingBox getBoundingBox(int zoom) {
+        return boundingBox;
     }
 
     /**
@@ -275,23 +312,24 @@ public abstract class TileGenerator {
     }
 
     /**
-     * Set the Google Tiles flag to true to generate Google tile format tiles.
+     * Set the XYZ Tiles flag to true to generate XYZ tile format tiles.
      * Default is false
      *
-     * @param googleTiles Google Tiles flag
+     * @param xyzTiles XYZ Tiles flag
+     * @since 3.5.0
      */
-    public void setGoogleTiles(boolean googleTiles) {
-        this.googleTiles = googleTiles;
+    public void setXYZTiles(boolean xyzTiles) {
+        this.xyzTiles = xyzTiles;
     }
 
     /**
-     * Is the Google Tiles flag set to generate Google tile format tiles.
+     * Is the XYZ Tiles flag set to generate XYZ tile format tiles.
      *
-     * @return true if Google Tiles format, false if GeoPackage
-     * @since 1.2.5
+     * @return true if XYZ Tiles format, false if GeoPackage
+     * @since 3.5.0
      */
-    public boolean isGoogleTiles() {
-        return googleTiles;
+    public boolean isXYZTiles() {
+        return xyzTiles;
     }
 
     /**
@@ -315,6 +353,26 @@ public abstract class TileGenerator {
     }
 
     /**
+     * Is skip existing tiles on
+     *
+     * @return true if skipping existing tiles
+     * @since 3.5.0
+     */
+    public boolean isSkipExisting() {
+        return skipExisting;
+    }
+
+    /**
+     * Set the skip existing tiles flag
+     *
+     * @param skipExisting true to skip existing tiles
+     * @since 3.5.0
+     */
+    public void setSkipExisting(boolean skipExisting) {
+        this.skipExisting = skipExisting;
+    }
+
+    /**
      * Get the tile count of tiles to be generated
      *
      * @return tile count
@@ -322,27 +380,28 @@ public abstract class TileGenerator {
     public int getTileCount() {
         if (tileCount == null) {
             long count = 0;
-            BoundingBox requestBoundingBox = null;
-            if (projection.getUnit() instanceof DegreeUnit) {
-                requestBoundingBox = boundingBox;
-            } else {
-                ProjectionTransform transform = projection.getTransformation(ProjectionConstants.EPSG_WEB_MERCATOR);
-                requestBoundingBox = boundingBox;
-                if (!transform.isSameProjection()) {
-                    requestBoundingBox = requestBoundingBox.transform(transform);
-                }
+
+            boolean degrees = projection.isUnit(Units.DEGREES);
+            ProjectionTransform transformToWebMercator = null;
+            if (!degrees) {
+                transformToWebMercator = projection.getTransformation(ProjectionConstants.EPSG_WEB_MERCATOR);
             }
+
             for (int zoom = minZoom; zoom <= maxZoom; zoom++) {
+
+                BoundingBox expandedBoundingBox = getBoundingBox(zoom);
+
                 // Get the tile grid that includes the entire bounding box
                 TileGrid tileGrid = null;
-                if (projection.getUnit() instanceof DegreeUnit) {
-                    tileGrid = TileBoundingBoxUtils.getTileGridWGS84(requestBoundingBox, zoom);
+                if (degrees) {
+                    tileGrid = TileBoundingBoxUtils.getTileGridWGS84(expandedBoundingBox, zoom);
                 } else {
-                    tileGrid = TileBoundingBoxUtils.getTileGrid(requestBoundingBox, zoom);
+                    tileGrid = TileBoundingBoxUtils.getTileGrid(expandedBoundingBox.transform(transformToWebMercator), zoom);
                 }
 
                 count += tileGrid.count();
                 tileGrids.put(zoom, tileGrid);
+                tileBounds.put(zoom, expandedBoundingBox);
             }
 
             tileCount = (int) Math.min(count, Integer.MAX_VALUE);
@@ -370,7 +429,8 @@ public abstract class TileGenerator {
         boolean update = false;
 
         // Adjust the tile matrix set and bounds
-        adjustBounds(boundingBox, minZoom);
+        BoundingBox minZoomBoundingBox = tileBounds.get(minZoom);
+        adjustBounds(minZoomBoundingBox, minZoom);
 
         // Create a new tile matrix or update an existing
         TileMatrixSetDao tileMatrixSetDao = geoPackage.getTileMatrixSetDao();
@@ -382,12 +442,13 @@ public abstract class TileGenerator {
             SpatialReferenceSystem srs = srsDao.getOrCreateCode(projection.getAuthority(),
                     Long.parseLong(projection.getCode()));
             // Create the tile table
-            tileMatrixSet = geoPackage.createTileTableWithMetadata(
+            geoPackage.createTileTable(TileTableMetadata.create(
                     tableName,
                     boundingBox,
                     srs.getSrsId(),
                     tileGridBoundingBox,
-                    srs.getSrsId());
+                    srs.getSrsId()));
+            tileMatrixSet = tileMatrixSetDao.queryForId(tableName);
         } else {
             update = true;
             // Query to get the Tile Matrix Set
@@ -417,17 +478,18 @@ public abstract class TileGenerator {
 
                 TileGrid localTileGrid = null;
 
-                // Determine the matrix width and height for Google format
-                if (googleTiles) {
+                // Determine the matrix width and height for XYZ format
+                if (xyzTiles) {
                     matrixWidth = TileBoundingBoxUtils.tilesPerSide(zoom);
                     matrixHeight = matrixWidth;
                 }
                 // Get the local tile grid for GeoPackage format of where the
                 // tiles belong
                 else {
+                    BoundingBox zoomBoundingBox = tileBounds.get(zoom);
                     localTileGrid = TileBoundingBoxUtils.getTileGrid(
                             tileGridBoundingBox, matrixWidth, matrixHeight,
-                            boundingBox);
+                            zoomBoundingBox);
                 }
 
                 // Generate the tiles for the zoom level
@@ -436,7 +498,7 @@ public abstract class TileGenerator {
                         tileGrid, localTileGrid, matrixWidth, matrixHeight,
                         update);
 
-                if (!googleTiles) {
+                if (!xyzTiles) {
                     // Double the matrix width and height for the next level
                     matrixWidth *= 2;
                     matrixHeight *= 2;
@@ -476,10 +538,10 @@ public abstract class TileGenerator {
      */
     private void adjustBounds(BoundingBox boundingBox,
                               int zoom) {
-        // Google Tile Format
-        if (googleTiles) {
-            adjustGoogleBounds();
-        } else if (projection.getUnit() instanceof DegreeUnit) {
+        // XYZ Tile Format
+        if (xyzTiles) {
+            adjustXYZBounds();
+        } else if (projection.isUnit(Units.DEGREES)) {
             adjustGeoPackageBoundsWGS84(boundingBox, zoom);
         } else {
             adjustGeoPackageBounds(boundingBox, zoom);
@@ -487,9 +549,9 @@ public abstract class TileGenerator {
     }
 
     /**
-     * Adjust the tile matrix set and web mercator bounds for Google tile format
+     * Adjust the tile matrix set and web mercator bounds for XYZ tile format
      */
-    private void adjustGoogleBounds() {
+    private void adjustXYZBounds() {
         // Set the tile matrix set bounding box to be the world
         BoundingBox standardWgs84Box = new BoundingBox(-ProjectionConstants.WGS84_HALF_WORLD_LON_WIDTH,
                 ProjectionConstants.WEB_MERCATOR_MIN_LAT_RANGE,
@@ -544,22 +606,22 @@ public abstract class TileGenerator {
 
         TileDao tileDao = geoPackage.getTileDao(tileMatrixSet);
 
-        if (tileDao.isGoogleTiles()) {
-            if (!googleTiles) {
-                // If adding GeoPackage tiles to a Google Tile format, add them
-                // as Google tiles
-                googleTiles = true;
-                adjustGoogleBounds();
+        if (tileDao.isXYZTiles()) {
+            if (!xyzTiles) {
+                // If adding GeoPackage tiles to a XYZ Tile format, add them
+                // as XYZ tiles
+                xyzTiles = true;
+                adjustXYZBounds();
             }
-        } else if (googleTiles) {
-            // Can't add Google formatted tiles to GeoPackage tiles
+        } else if (xyzTiles) {
+            // Can't add XYZ formatted tiles to GeoPackage tiles
             throw new GeoPackageException(
-                    "Can not add Google formatted tiles to "
+                    "Can not add XYZ formatted tiles to "
                             + tableName
                             + " which already contains GeoPackage formatted tiles");
         }
 
-        Projection tileMatrixProjection = tileMatrixSet.getSrs().getProjection();
+        Projection tileMatrixProjection = tileMatrixSet.getProjection();
         if (!tileMatrixProjection.equals(projection)) {
             throw new GeoPackageException("Can not update tiles projected at "
                     + tileMatrixProjection.getCode() + " with tiles projected at " + projection.getCode());
@@ -570,12 +632,12 @@ public abstract class TileGenerator {
         // Combine the existing content and request bounding boxes
         BoundingBox previousContentsBoundingBox = contents.getBoundingBox();
         if (previousContentsBoundingBox != null) {
-            ProjectionTransform transformProjectionToContents = projection.getTransformation(contents.getSrs().getProjection());
+            ProjectionTransform transformProjectionToContents = projection.getTransformation(contents.getProjection());
             BoundingBox contentsBoundingBox = boundingBox;
             if (!transformProjectionToContents.isSameProjection()) {
                 contentsBoundingBox = contentsBoundingBox.transform(transformProjectionToContents);
             }
-            contentsBoundingBox = TileBoundingBoxUtils.union(contentsBoundingBox, previousContentsBoundingBox);
+            contentsBoundingBox = contentsBoundingBox.union(previousContentsBoundingBox);
 
             // Update the contents if modified
             if (!contentsBoundingBox.equals(previousContentsBoundingBox)) {
@@ -587,14 +649,14 @@ public abstract class TileGenerator {
 
         // If updating GeoPackage format tiles, all existing metadata and tile
         // rows needs to be adjusted
-        if (!googleTiles) {
+        if (!xyzTiles) {
 
             BoundingBox previousTileMatrixSetBoundingBox = tileMatrixSet.getBoundingBox();
 
             // Adjust the bounds to include the request and existing bounds
             ProjectionTransform transformProjectionToTileMatrixSet = projection.getTransformation(tileMatrixProjection);
             boolean sameProjection = transformProjectionToTileMatrixSet.isSameProjection();
-            BoundingBox updateBoundingBox = boundingBox;
+            BoundingBox updateBoundingBox = tileBounds.get(minZoom);
             if (!sameProjection) {
                 updateBoundingBox = updateBoundingBox.transform(transformProjectionToTileMatrixSet);
             }
@@ -607,7 +669,7 @@ public abstract class TileGenerator {
                 updateTileGridBoundingBox = updateTileGridBoundingBox.transform(transformProjectionToTileMatrixSet);
             }
             if (!previousTileMatrixSetBoundingBox.equals(updateTileGridBoundingBox)) {
-                updateTileGridBoundingBox = TileBoundingBoxUtils.union(updateTileGridBoundingBox, previousTileMatrixSetBoundingBox);
+                updateTileGridBoundingBox = updateTileGridBoundingBox.union(previousTileMatrixSetBoundingBox);
                 adjustBounds(updateTileGridBoundingBox, minNewOrUpdateZoom);
                 updateTileGridBoundingBox = tileGridBoundingBox;
                 if (!sameProjection) {
@@ -747,12 +809,49 @@ public abstract class TileGenerator {
         Integer tileWidth = null;
         Integer tileHeight = null;
 
+        Map<Long, Set<Long>> existingTiles = null;
+        if (update && skipExisting) {
+            existingTiles = new HashMap<>();
+            TileCursor tileCursor = tileDao.queryForTile(zoomLevel);
+            try {
+                while (tileCursor.moveToNext()) {
+                    long column = ((Number) tileCursor
+                            .getValue(TileTable.COLUMN_TILE_COLUMN))
+                            .longValue();
+                    long row = ((Number) tileCursor
+                            .getValue(TileTable.COLUMN_TILE_ROW)).longValue();
+                    Set<Long> columnRows = existingTiles.get(column);
+                    if (columnRows == null) {
+                        columnRows = new HashSet<>();
+                        existingTiles.put(column, columnRows);
+                    }
+                    columnRows.add(row);
+                }
+            } finally {
+                tileCursor.close();
+            }
+            if (existingTiles.isEmpty()) {
+                existingTiles = null;
+            }
+        }
+
         // Download and create the tile and each coordinate
         for (long x = tileGrid.getMinX(); x <= tileGrid.getMaxX(); x++) {
 
             // Check if the progress has been cancelled
             if (progress != null && !progress.isActive()) {
                 break;
+            }
+
+            long tileColumn = x;
+            // Update the column to the local tile grid location
+            if (localTileGrid != null) {
+                tileColumn = (x - tileGrid.getMinX()) + localTileGrid.getMinX();
+            }
+
+            Set<Long> existingColumnRows = null;
+            if (existingTiles != null) {
+                existingColumnRows = existingTiles.get(tileColumn);
             }
 
             for (long y = tileGrid.getMinY(); y <= tileGrid.getMaxY(); y++) {
@@ -762,65 +861,70 @@ public abstract class TileGenerator {
                     break;
                 }
 
-                try {
+                long tileRow = y;
+                // Update the row to the local tile grid location
+                if (localTileGrid != null) {
+                    tileRow = (y - tileGrid.getMinY())
+                            + localTileGrid.getMinY();
+                }
 
-                    // Create the tile
-                    byte[] tileBytes = createTile(zoomLevel, x, y);
+                boolean createTile = true;
+                if (existingColumnRows != null) {
+                    createTile = !existingColumnRows.contains(tileRow);
+                }
 
-                    if (tileBytes != null) {
+                if (createTile) {
+                    try {
 
-                        Bitmap bitmap = null;
+                        // Create the tile
+                        byte[] tileBytes = createTile(zoomLevel, x, y);
 
-                        // Compress the image
-                        if (compressFormat != null) {
-                            bitmap = BitmapConverter.toBitmap(tileBytes, options);
-                            if (bitmap != null) {
-                                tileBytes = BitmapConverter.toBytes(bitmap,
-                                        compressFormat, compressQuality);
+                        if (tileBytes != null) {
+
+                            Bitmap bitmap = null;
+
+                            // Compress the image
+                            if (compressFormat != null) {
+                                bitmap = BitmapConverter.toBitmap(tileBytes, options);
+                                if (bitmap != null) {
+                                    tileBytes = BitmapConverter.toBytes(bitmap,
+                                            compressFormat, compressQuality);
+                                }
+                            }
+
+                            // Create a new tile row
+                            TileRow newRow = tileDao.newRow();
+                            newRow.setZoomLevel(zoomLevel);
+
+                            // If an update, delete an existing row
+                            if (update) {
+                                tileDao.deleteTile(tileColumn, tileRow, zoomLevel);
+                            }
+
+                            newRow.setTileColumn(tileColumn);
+                            newRow.setTileRow(tileRow);
+                            newRow.setTileData(tileBytes);
+                            tileDao.create(newRow);
+
+                            count++;
+
+                            // Determine the tile width and height
+                            if (tileWidth == null) {
+                                if (bitmap == null) {
+                                    bitmap = BitmapConverter.toBitmap(tileBytes,
+                                            options);
+                                }
+                                if (bitmap != null) {
+                                    tileWidth = bitmap.getWidth();
+                                    tileHeight = bitmap.getHeight();
+                                }
                             }
                         }
-
-                        // Create a new tile row
-                        TileRow newRow = tileDao.newRow();
-                        newRow.setZoomLevel(zoomLevel);
-
-                        long tileColumn = x;
-                        long tileRow = y;
-
-                        // Update the column and row to the local tile grid location
-                        if (localTileGrid != null) {
-                            tileColumn = (x - tileGrid.getMinX())
-                                    + localTileGrid.getMinX();
-                            tileRow = (y - tileGrid.getMinY())
-                                    + localTileGrid.getMinY();
-                        }
-
-                        // If an update, delete an existing row
-                        if (update) {
-                            tileDao.deleteTile(tileColumn, tileRow, zoomLevel);
-                        }
-
-                        newRow.setTileColumn(tileColumn);
-                        newRow.setTileRow(tileRow);
-                        newRow.setTileData(tileBytes);
-                        tileDao.create(newRow);
-
-                        count++;
-
-                        // Determine the tile width and height
-                        if (tileWidth == null) {
-                            if (bitmap == null) {
-                                bitmap = BitmapConverter.toBitmap(tileBytes,
-                                        options);
-                            }
-                            if (bitmap != null) {
-                                tileWidth = bitmap.getWidth();
-                                tileHeight = bitmap.getHeight();
-                            }
-                        }
+                    } catch (Exception e) {
+                        Log.w(TileGenerator.class.getSimpleName(), "Failed to create tile. Zoom: "
+                                + zoomLevel + ", x: " + x + ", y: " + y, e);
+                        // Skip this tile, don't increase count
                     }
-                } catch (Exception e) {
-                    // Skip this tile, don't increase count
                 }
 
                 // Update the progress count, even on failures
@@ -834,7 +938,8 @@ public abstract class TileGenerator {
 
         // If none of the tiles were translated into a bitmap with dimensions,
         // delete them
-        if (tileWidth == null || tileHeight == null) {
+        if ((tileWidth == null || tileHeight == null)
+                && existingTiles == null) {
             count = 0;
 
             StringBuilder where = new StringBuilder();

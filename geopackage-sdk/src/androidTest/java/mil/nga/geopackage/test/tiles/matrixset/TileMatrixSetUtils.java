@@ -15,11 +15,11 @@ import java.util.List;
 import java.util.Map;
 
 import mil.nga.geopackage.GeoPackage;
-import mil.nga.geopackage.core.contents.Contents;
-import mil.nga.geopackage.core.contents.ContentsDao;
-import mil.nga.geopackage.core.contents.ContentsDataType;
-import mil.nga.geopackage.core.srs.SpatialReferenceSystem;
-import mil.nga.geopackage.core.srs.SpatialReferenceSystemDao;
+import mil.nga.geopackage.contents.Contents;
+import mil.nga.geopackage.contents.ContentsDao;
+import mil.nga.geopackage.contents.ContentsDataType;
+import mil.nga.geopackage.srs.SpatialReferenceSystem;
+import mil.nga.geopackage.srs.SpatialReferenceSystemDao;
 import mil.nga.geopackage.test.TestUtils;
 import mil.nga.geopackage.tiles.matrixset.TileMatrixSet;
 import mil.nga.geopackage.tiles.matrixset.TileMatrixSetDao;
@@ -105,11 +105,11 @@ public class TileMatrixSetUtils {
 				TestCase.assertTrue(found);
 
 				// Query for field values
-				Map<String, Object> fieldValues = new HashMap<String, Object>();
-				fieldValues.put(TileMatrixSet.COLUMN_MIN_X,
-						tileMatrixSet.getMinX());
-				fieldValues.put(TileMatrixSet.COLUMN_MAX_X,
-						tileMatrixSet.getMaxX());
+				Map<String, Object> fieldValues = new HashMap<>();
+				fieldValues.put(TileMatrixSet.COLUMN_TABLE_NAME,
+						tileMatrixSet.getTableName());
+				fieldValues.put(TileMatrixSet.COLUMN_SRS_ID,
+						tileMatrixSet.getSrsId());
 
 				queryTileMatrixSetList = dao.queryForFieldValues(fieldValues);
 				TestCase.assertNotNull(queryTileMatrixSetList);
@@ -315,6 +315,7 @@ public class TileMatrixSetUtils {
 				TileMatrixSet tileMatrixSet = results.get(random);
 
 				// Delete the tile matrix set
+				geoPackage.foreignKeys(false);
 				dao.delete(tileMatrixSet);
 
 				// Verify deleted

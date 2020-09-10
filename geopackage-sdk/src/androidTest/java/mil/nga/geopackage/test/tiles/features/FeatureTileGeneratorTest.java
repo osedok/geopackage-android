@@ -1,20 +1,28 @@
 package mil.nga.geopackage.test.tiles.features;
 
+import android.graphics.Bitmap;
+
+import org.junit.Test;
+
 import java.io.IOException;
 import java.sql.SQLException;
 
 import mil.nga.geopackage.BoundingBox;
 import mil.nga.geopackage.features.index.FeatureIndexManager;
+import mil.nga.geopackage.features.index.FeatureIndexResults;
 import mil.nga.geopackage.features.index.FeatureIndexType;
 import mil.nga.geopackage.features.user.FeatureDao;
 import mil.nga.geopackage.test.CreateGeoPackageTestCase;
 import mil.nga.geopackage.tiles.TileBoundingBoxUtils;
 import mil.nga.geopackage.tiles.TileGenerator;
+import mil.nga.geopackage.tiles.TileGrid;
 import mil.nga.geopackage.tiles.features.FeatureTileGenerator;
 import mil.nga.geopackage.tiles.features.FeatureTiles;
 import mil.nga.geopackage.tiles.features.custom.NumberFeaturesTile;
 import mil.nga.sf.proj.ProjectionConstants;
 import mil.nga.sf.proj.ProjectionFactory;
+
+import static org.junit.Assert.assertEquals;
 
 /**
  * Test GeoPackage Feature Tile Generator
@@ -36,6 +44,7 @@ public class FeatureTileGeneratorTest extends CreateGeoPackageTestCase {
      * @throws java.io.IOException
      * @throws java.sql.SQLException
      */
+    @Test
     public void testTileGenerator() throws IOException, SQLException {
         testTileGenerator(false, false, false);
     }
@@ -46,6 +55,7 @@ public class FeatureTileGeneratorTest extends CreateGeoPackageTestCase {
      * @throws java.io.IOException
      * @throws java.sql.SQLException
      */
+    @Test
     public void testTileGeneratorWithIndex() throws IOException, SQLException {
         testTileGenerator(true, false, false);
     }
@@ -56,6 +66,7 @@ public class FeatureTileGeneratorTest extends CreateGeoPackageTestCase {
      * @throws java.io.IOException
      * @throws java.sql.SQLException
      */
+    @Test
     public void testTileGeneratorWithIcon() throws IOException, SQLException {
         testTileGenerator(false, true, false);
     }
@@ -66,6 +77,7 @@ public class FeatureTileGeneratorTest extends CreateGeoPackageTestCase {
      * @throws java.io.IOException
      * @throws java.sql.SQLException
      */
+    @Test
     public void testTileGeneratorWithMaxFeatures() throws IOException,
             SQLException {
         testTileGenerator(false, false, true);
@@ -77,6 +89,7 @@ public class FeatureTileGeneratorTest extends CreateGeoPackageTestCase {
      * @throws java.io.IOException
      * @throws java.sql.SQLException
      */
+    @Test
     public void testTileGeneratorWithIndexAndIcon() throws IOException,
             SQLException {
         testTileGenerator(true, true, false);
@@ -88,6 +101,7 @@ public class FeatureTileGeneratorTest extends CreateGeoPackageTestCase {
      * @throws java.io.IOException
      * @throws java.sql.SQLException
      */
+    @Test
     public void testTileGeneratorWithIndexAndIconAndMaxFeatures()
             throws IOException, SQLException {
         testTileGenerator(true, true, true);
@@ -133,19 +147,11 @@ public class FeatureTileGeneratorTest extends CreateGeoPackageTestCase {
                 featureTiles.setMaxFeaturesTileDraw(numberFeaturesTile);
             }
 
-            BoundingBox boundingBox = new BoundingBox();
-            boundingBox = TileBoundingBoxUtils
-                    .boundWgs84BoundingBoxWithWebMercatorLimits(boundingBox);
-            boundingBox = boundingBox
-                    .transform(ProjectionFactory
-                            .getProjection(ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM)
-                            .getTransformation(ProjectionConstants.EPSG_WEB_MERCATOR));
             TileGenerator tileGenerator = new FeatureTileGenerator(activity, geoPackage,
                     "gen_feature_tiles", featureTiles, minZoom, maxZoom,
-                    boundingBox,
                     ProjectionFactory
                             .getProjection(ProjectionConstants.EPSG_WEB_MERCATOR));
-            tileGenerator.setGoogleTiles(false);
+            tileGenerator.setXYZTiles(false);
 
             int tiles = tileGenerator.generateTiles();
 
@@ -161,15 +167,30 @@ public class FeatureTileGeneratorTest extends CreateGeoPackageTestCase {
                 }
 
                 for (int z = minZoom; z <= maxZoom; z++) {
-                    int tilesPerSide = TileBoundingBoxUtils.tilesPerSide(z);
-                    for (int x = 0; x < tilesPerSide; x++) {
-                        for (int y = 0; y < tilesPerSide; y++) {
-                            if (featureTiles.queryIndexedFeaturesCount(x, y, z) > 0) {
-                                expectedTiles++;
+
+                    TileGrid tileGrid = TileBoundingBoxUtils.getTileGrid(
+                            tileGenerator.getBoundingBox(z), z);
+
+                    for (long x = tileGrid.getMinX(); x <= tileGrid.getMaxX(); x++) {
+                        for (long y = tileGrid.getMinY(); y <= tileGrid.getMaxY(); y++) {
+                            if (featureTiles.queryIndexedFeaturesCount((int) x,
+                                    (int) y, z) > 0) {
+
+                                BoundingBox webMercatorBoundingBox = TileBoundingBoxUtils
+                                        .getWebMercatorBoundingBox(x, y, z);
+                                FeatureIndexResults results = featureTiles
+                                        .queryIndexedFeatures((int) x, (int) y, z);
+                                Bitmap image = featureTiles.drawTile(z,
+                                        webMercatorBoundingBox, results);
+                                if (image != null) {
+                                    expectedTiles++;
+                                }
+
                             }
                         }
                     }
                 }
+
             }
 
             assertEquals(expectedTiles, tiles);

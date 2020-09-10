@@ -1,14 +1,22 @@
 package mil.nga.geopackage.test.extension;
 
-import mil.nga.geopackage.core.srs.SpatialReferenceSystem;
-import mil.nga.geopackage.core.srs.SpatialReferenceSystemDao;
+import org.junit.Test;
+
 import mil.nga.geopackage.extension.CrsWktExtension;
 import mil.nga.geopackage.extension.ExtensionScopeType;
 import mil.nga.geopackage.extension.Extensions;
 import mil.nga.geopackage.property.GeoPackageProperties;
 import mil.nga.geopackage.property.PropertyConstants;
+import mil.nga.geopackage.srs.SpatialReferenceSystem;
+import mil.nga.geopackage.srs.SpatialReferenceSystemDao;
 import mil.nga.geopackage.test.CreateGeoPackageTestCase;
 import mil.nga.sf.proj.ProjectionConstants;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Geometry Extensions Tests
@@ -20,6 +28,7 @@ public class CrsWktExtensionTest extends CreateGeoPackageTestCase {
     /**
      * Test the Extension creation
      */
+    @Test
     public void testExtension() throws Exception {
 
         SpatialReferenceSystemDao srsDao = geoPackage
@@ -107,7 +116,7 @@ public class CrsWktExtensionTest extends CreateGeoPackageTestCase {
         newSrs = srsDao.queryForId(newSrs.getSrsId());
         assertNotNull(newSrs);
         assertNotNull(newSrs.getDefinition_12_063());
-        assertEquals(newSrs.getDefinition_12_063(), "undefined");
+        assertEquals(newSrs.getDefinition_12_063(), "");
 
         // Test the get or create auto set
         wgs84Srs = srsDao
@@ -177,7 +186,7 @@ public class CrsWktExtensionTest extends CreateGeoPackageTestCase {
         newSrs3 = srsDao.queryForId(newSrs3.getSrsId());
         assertNotNull(newSrs3);
         assertNotNull(newSrs3.getDefinition_12_063());
-        assertEquals(newSrs3.getDefinition_12_063(), "undefined");
+        assertEquals(newSrs3.getDefinition_12_063(), "");
 
     }
 

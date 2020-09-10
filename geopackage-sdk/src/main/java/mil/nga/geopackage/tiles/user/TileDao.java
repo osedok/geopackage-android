@@ -1,6 +1,6 @@
 package mil.nga.geopackage.tiles.user;
 
-import android.support.v4.util.LongSparseArray;
+import androidx.collection.LongSparseArray;
 
 import java.util.HashMap;
 import java.util.List;
@@ -8,14 +8,15 @@ import java.util.Map;
 
 import mil.nga.geopackage.BoundingBox;
 import mil.nga.geopackage.GeoPackageException;
-import mil.nga.geopackage.core.contents.Contents;
-import mil.nga.geopackage.core.srs.SpatialReferenceSystem;
+import mil.nga.geopackage.contents.Contents;
 import mil.nga.geopackage.db.GeoPackageConnection;
+import mil.nga.geopackage.srs.SpatialReferenceSystem;
 import mil.nga.geopackage.tiles.TileBoundingBoxUtils;
 import mil.nga.geopackage.tiles.TileGrid;
 import mil.nga.geopackage.tiles.matrix.TileMatrix;
 import mil.nga.geopackage.tiles.matrixset.TileMatrixSet;
 import mil.nga.geopackage.user.UserDao;
+import mil.nga.sf.proj.Projection;
 import mil.nga.sf.proj.ProjectionConstants;
 
 /**
@@ -70,22 +71,21 @@ public class TileDao extends UserDao<TileColumn, TileTable, TileRow, TileCursor>
      *
      * @param database      database name
      * @param db            GeoPackage connection
-     * @param tileDb        tile connection
      * @param tileMatrixSet tile matrix set
      * @param tileMatrices  tile matrices
      * @param table         tile table
      */
-    public TileDao(String database, GeoPackageConnection db, TileConnection tileDb, TileMatrixSet tileMatrixSet,
+    public TileDao(String database, GeoPackageConnection db, TileMatrixSet tileMatrixSet,
                    List<TileMatrix> tileMatrices, TileTable table) {
-        super(database, db, tileDb, table);
+        super(database, db, new TileConnection(db), table);
 
-        this.tileDb = tileDb;
+        this.tileDb = (TileConnection) getUserDb();
         this.tileMatrixSet = tileMatrixSet;
         this.tileMatrices = tileMatrices;
         this.widths = new double[tileMatrices.size()];
         this.heights = new double[tileMatrices.size()];
 
-        projection = tileMatrixSet.getSrs().getProjection();
+        projection = tileMatrixSet.getProjection();
 
         // Set the min and max zoom levels
         if (!tileMatrices.isEmpty()) {
@@ -126,6 +126,14 @@ public class TileDao extends UserDao<TileColumn, TileTable, TileRow, TileCursor>
     @Override
     public BoundingBox getBoundingBox() {
         return tileMatrixSet.getBoundingBox();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public BoundingBox getBoundingBox(Projection projection) {
+        return tileMatrixSet.getBoundingBox(projection);
     }
 
     /**
@@ -219,6 +227,26 @@ public class TileDao extends UserDao<TileColumn, TileTable, TileRow, TileCursor>
      */
     public TileMatrix getTileMatrix(long zoomLevel) {
         return zoomLevelToTileMatrix.get(zoomLevel);
+    }
+
+    /**
+     * Get the Spatial Reference System
+     *
+     * @return srs
+     * @since 4.0.0
+     */
+    public SpatialReferenceSystem getSrs() {
+        return tileMatrixSet.getSrs();
+    }
+
+    /**
+     * Get the Spatial Reference System id
+     *
+     * @return srs id
+     * @since 4.0.0
+     */
+    public long getSrsId() {
+        return tileMatrixSet.getSrsId();
     }
 
     /**
@@ -485,14 +513,15 @@ public class TileDao extends UserDao<TileColumn, TileTable, TileRow, TileCursor>
         String where = buildWhere(TileTable.COLUMN_ZOOM_LEVEL, zoomLevel);
         String[] whereArgs = buildWhereArgs(new Object[]{zoomLevel});
 
-        Integer minX = min(TileTable.COLUMN_TILE_COLUMN, where, whereArgs);
-        Integer maxX = max(TileTable.COLUMN_TILE_COLUMN, where, whereArgs);
-        Integer minY = min(TileTable.COLUMN_TILE_ROW, where, whereArgs);
-        Integer maxY = max(TileTable.COLUMN_TILE_ROW, where, whereArgs);
+        Number minX = min(TileTable.COLUMN_TILE_COLUMN, where, whereArgs);
+        Number maxX = max(TileTable.COLUMN_TILE_COLUMN, where, whereArgs);
+        Number minY = min(TileTable.COLUMN_TILE_ROW, where, whereArgs);
+        Number maxY = max(TileTable.COLUMN_TILE_ROW, where, whereArgs);
 
         TileGrid tileGrid = null;
         if (minX != null && maxX != null && minY != null && maxY != null) {
-            tileGrid = new TileGrid(minX, minY, maxX, maxY);
+            tileGrid = new TileGrid(minX.longValue(), minY.longValue(),
+                    maxX.longValue(), maxY.longValue());
         }
 
         return tileGrid;
@@ -559,11 +588,12 @@ public class TileDao extends UserDao<TileColumn, TileTable, TileRow, TileCursor>
     }
 
     /**
-     * Determine if the tiles are in the Google tile coordinate format
+     * Determine if the tiles are in the XYZ tile coordinate format
      *
-     * @return google tiles flag
+     * @return true if XYZ tile format
+     * @since 3.5.0
      */
-    public boolean isGoogleTiles() {
+    public boolean isXYZTiles() {
 
         // Convert the bounding box to wgs84
         BoundingBox boundingBox = tileMatrixSet.getBoundingBox();
@@ -571,7 +601,7 @@ public class TileDao extends UserDao<TileColumn, TileTable, TileRow, TileCursor>
                 projection.getTransformation(
                         ProjectionConstants.EPSG_WORLD_GEODETIC_SYSTEM));
 
-        boolean googleTiles = false;
+        boolean xyzTiles = false;
 
         // Verify the bounds are the entire world
         if (wgs84BoundingBox.getMinLatitude() <= ProjectionConstants.WEB_MERCATOR_MIN_LAT_RANGE
@@ -579,7 +609,7 @@ public class TileDao extends UserDao<TileColumn, TileTable, TileRow, TileCursor>
                 && wgs84BoundingBox.getMinLongitude() <= -ProjectionConstants.WGS84_HALF_WORLD_LON_WIDTH
                 && wgs84BoundingBox.getMaxLongitude() >= ProjectionConstants.WGS84_HALF_WORLD_LON_WIDTH) {
 
-            googleTiles = true;
+            xyzTiles = true;
 
             // Verify each tile matrix is the correct width and height
             for (TileMatrix tileMatrix : tileMatrices) {
@@ -588,13 +618,13 @@ public class TileDao extends UserDao<TileColumn, TileTable, TileRow, TileCursor>
                         .tilesPerSide((int) zoomLevel);
                 if (tileMatrix.getMatrixWidth() != tilesPerSide
                         || tileMatrix.getMatrixHeight() != tilesPerSide) {
-                    googleTiles = false;
+                    xyzTiles = false;
                     break;
                 }
             }
         }
 
-        return googleTiles;
+        return xyzTiles;
     }
 
 }

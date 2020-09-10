@@ -13,7 +13,7 @@ Software source code previously released under an open source license and then m
 
 [GeoPackage Android](http://ngageoint.github.io/geopackage-android/) is a [GeoPackage Library](http://ngageoint.github.io/GeoPackage/) SDK implementation of the Open Geospatial Consortium [GeoPackage](http://www.geopackage.org/) [spec](http://www.geopackage.org/spec/).  It is listed as an [OGC GeoPackage Implementation](http://www.geopackage.org/#implementations_nga) by the National Geospatial-Intelligence Agency.
 
-<a href='http://www.opengeospatial.org/resource/products/details/?pid=1488'>
+<a href='http://www.opengeospatial.org/resource/products/details/?pid=1626'>
     <img src="https://github.com/ngageoint/GeoPackage/raw/master/docs/images/ogc.gif" height=50>
 </a>
 
@@ -51,11 +51,11 @@ The [Disconnected Interactive Content Explorer (DICE)](https://github.com/ngageo
 // Get a manager
 GeoPackageManager manager = GeoPackageFactory.getManager(context);
 
-// Available databases
-List<String> databases = manager.databases();
-
 // Import database
 boolean imported = manager.importGeoPackage(geoPackageFile);
+
+// Available databases
+List<String> databases = manager.databases();
 
 // Open database
 GeoPackage geoPackage = manager.open(databases.get(0));
@@ -66,10 +66,14 @@ ContentsDao contentsDao = geoPackage.getContentsDao();
 GeometryColumnsDao geomColumnsDao = geoPackage.getGeometryColumnsDao();
 TileMatrixSetDao tileMatrixSetDao = geoPackage.getTileMatrixSetDao();
 TileMatrixDao tileMatrixDao = geoPackage.getTileMatrixDao();
-DataColumnsDao dataColumnsDao = geoPackage.getDataColumnsDao();
-DataColumnConstraintsDao dataColumnConstraintsDao = geoPackage.getDataColumnConstraintsDao();
-MetadataDao metadataDao = geoPackage.getMetadataDao();
-MetadataReferenceDao metadataReferenceDao = geoPackage.getMetadataReferenceDao();
+SchemaExtension schemaExtension = new SchemaExtension(geoPackage);
+DataColumnsDao dao = schemaExtension.getDataColumnsDao();
+DataColumnConstraintsDao dataColumnConstraintsDao = schemaExtension
+        .getDataColumnConstraintsDao();
+MetadataExtension metadataExtension = new MetadataExtension(geoPackage);
+MetadataDao metadataDao = metadataExtension.getMetadataDao();
+MetadataReferenceDao metadataReferenceDao = metadataExtension
+        .getMetadataReferenceDao();
 ExtensionsDao extensionsDao = geoPackage.getExtensionsDao();
 
 // Feature and tile tables
@@ -80,14 +84,16 @@ List<String> tiles = geoPackage.getTileTables();
 String featureTable = features.get(0);
 FeatureDao featureDao = geoPackage.getFeatureDao(featureTable);
 FeatureCursor featureCursor = featureDao.queryForAll();
-try{
-    while(featureCursor.moveToNext()){
+try {
+    while (featureCursor.moveToNext()) {
         FeatureRow featureRow = featureCursor.getRow();
         GeoPackageGeometryData geometryData = featureRow.getGeometry();
-        Geometry geometry = geometryData.getGeometry();
-        // ...
+        if (geometryData != null && !geometryData.isEmpty()) {
+          Geometry geometry = geometryData.getGeometry();
+          // ...
+        }
     }
-}finally{
+} finally {
     featureCursor.close();
 }
 
@@ -95,14 +101,14 @@ try{
 String tileTable = tiles.get(0);
 TileDao tileDao = geoPackage.getTileDao(tileTable);
 TileCursor tileCursor = tileDao.queryForAll();
-try{
-    while(tileCursor.moveToNext()){
+try {
+    while (tileCursor.moveToNext()) {
         TileRow tileRow = tileCursor.getRow();
         byte[] tileBytes = tileRow.getTileData();
         Bitmap tileBitmap = tileRow.getTileDataBitmap();
         // ...
     }
-}finally{
+} finally {
     tileCursor.close();
 }
 
@@ -112,7 +118,7 @@ indexer.setIndexLocation(FeatureIndexType.GEOPACKAGE);
 int indexedCount = indexer.index();
 
 // Draw tiles from features
-FeatureTiles featureTiles = new DefaultFeatureTiles(context, featureDao);
+FeatureTiles featureTiles = new DefaultFeatureTiles(context, featureDao, context.getResources().getDisplayMetrics().density);
 featureTiles.setMaxFeaturesPerTile(1000); // Set max features to draw per tile
 NumberFeaturesTile numberFeaturesTile = new NumberFeaturesTile(context); // Custom feature tile implementation
 featureTiles.setMaxFeaturesTileDraw(numberFeaturesTile); // Draw feature count tiles when max features passed
@@ -124,13 +130,16 @@ Projection projection = ProjectionFactory.getProjection(ProjectionConstants.EPSG
 
 // URL Tile Generator (generate tiles from a URL)
 TileGenerator urlTileGenerator = new UrlTileGenerator(context, geoPackage,
-                "url_tile_table", "http://url/{z}/{x}/{y}.png", 2, 7, boundingBox, projection);
+        "url_tile_table", "http://url/{z}/{x}/{y}.png", 1, 2, boundingBox, projection);
 int urlTileCount = urlTileGenerator.generateTiles();
 
 // Feature Tile Generator (generate tiles from features)
 TileGenerator featureTileGenerator = new FeatureTileGenerator(context, geoPackage,
-                featureTable + "_tiles", featureTiles, 10, 15, boundingBox, projection);
+        featureTable + "_tiles", featureTiles, 1, 2, boundingBox, projection);
 int featureTileCount = featureTileGenerator.generateTiles();
+
+// Close feature tiles (and indexer)
+featureTiles.close();
 
 // Close database when done
 geoPackage.close();
@@ -139,11 +148,14 @@ geoPackage.close();
 
 ### Installation ###
 
-Pull from the [Maven Central Repository](http://search.maven.org/#artifactdetails|mil.nga.geopackage|geopackage-android|3.0.2|aar) (AAR, POM, Source, Javadoc)
+Pull from the [Maven Central Repository](http://search.maven.org/#artifactdetails|mil.nga.geopackage|geopackage-android|4.0.0|aar) (AAR, POM, Source, Javadoc)
 
-    compile "mil.nga.geopackage:geopackage-android:3.0.2"
+    compile "mil.nga.geopackage:geopackage-android:4.0.0"
 
 ### Build ###
+
+[![Build Artifacts](https://github.com/ngageoint/geopackage-android/workflows/Build%20Artifacts/badge.svg)](https://github.com/ngageoint/geopackage-android/actions?query=workflow%3A%22Build+Artifacts%22)
+[![Test](https://github.com/ngageoint/geopackage-android/workflows/Test/badge.svg)](https://github.com/ngageoint/geopackage-android/actions?query=workflow%3ATest)
 
 Build this repository using Android Studio and/or Gradle.
 
@@ -160,7 +172,7 @@ Include as repositories in your project build.gradle:
 
 Include the dependency in your module build.gradle with desired version number:
 
-    compile "mil.nga.geopackage:geopackage-android:3.0.2"
+    compile "mil.nga.geopackage:geopackage-android:4.0.0"
 
 As part of the build process, run the "uploadArchives" task on the geopackage-android Gradle script to update the Maven local repository.
 
@@ -184,4 +196,3 @@ From your project directory, link the cloned SDK directory:
 * [TIFF](https://github.com/ngageoint/tiff-java) (The MIT License (MIT)) - Tagged Image File Format Lib
 * [OrmLite](http://ormlite.com/) (Open Source License) - Object Relational Mapping (ORM) Library
 * [PNGJ](http://github.com/leonbloy/pngj) (Apache License, Version 2.0) - PNGJ: Java library for PNG encoding
-* [Simple Features GeoJSON](https://github.com/ngageoint/simple-features-geojson-java) (The MIT License (MIT)) - Simple Features GeoJSON Lib

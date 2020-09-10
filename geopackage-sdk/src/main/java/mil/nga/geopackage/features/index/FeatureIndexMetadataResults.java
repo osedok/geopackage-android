@@ -27,6 +27,11 @@ public class FeatureIndexMetadataResults implements FeatureIndexResults {
     private final Cursor geometryMetadata;
 
     /**
+     * Id only results
+     */
+    private boolean idOnly = false;
+
+    /**
      * Constructor
      *
      * @param featureIndexer   feature indexer
@@ -35,6 +40,7 @@ public class FeatureIndexMetadataResults implements FeatureIndexResults {
     public FeatureIndexMetadataResults(FeatureIndexer featureIndexer, Cursor geometryMetadata) {
         this.featureIndexer = featureIndexer;
         this.geometryMetadata = geometryMetadata;
+        this.idOnly = geometryMetadata.getColumnCount() == 1;
     }
 
     /**
@@ -42,11 +48,11 @@ public class FeatureIndexMetadataResults implements FeatureIndexResults {
      */
     @Override
     public Iterator<FeatureRow> iterator() {
-        Iterator<FeatureRow> iterator = new Iterator<FeatureRow>() {
+        return new Iterator<FeatureRow>() {
 
             @Override
             public boolean hasNext() {
-                return !geometryMetadata.isLast();
+                return geometryMetadata.getCount() > 0 && !geometryMetadata.isLast();
             }
 
             @Override
@@ -55,13 +61,7 @@ public class FeatureIndexMetadataResults implements FeatureIndexResults {
                 FeatureRow featureRow = featureIndexer.getFeatureRow(geometryMetadata);
                 return featureRow;
             }
-
-            @Override
-            public void remove() {
-                throw new UnsupportedOperationException();
-            }
         };
-        return iterator;
     }
 
     /**
@@ -78,6 +78,48 @@ public class FeatureIndexMetadataResults implements FeatureIndexResults {
     @Override
     public void close() {
         geometryMetadata.close();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public Iterable<Long> ids() {
+        return new Iterable<Long>() {
+
+            /**
+             * {@inheritDoc}
+             */
+            @Override
+            public Iterator<Long> iterator() {
+                return new Iterator<Long>() {
+
+                    /**
+                     * {@inheritDoc}
+                     */
+                    @Override
+                    public boolean hasNext() {
+                        return geometryMetadata.getCount() > 0 && !geometryMetadata.isLast();
+                    }
+
+                    /**
+                     * {@inheritDoc}
+                     */
+                    @Override
+                    public Long next() {
+                        geometryMetadata.moveToNext();
+                        long id;
+                        if (idOnly) {
+                            id = geometryMetadata.getLong(0);
+                        } else {
+                            id = featureIndexer.getGeometryId(geometryMetadata);
+                        }
+                        return id;
+                    }
+
+                };
+            }
+        };
     }
 
 }

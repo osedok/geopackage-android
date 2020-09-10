@@ -5,13 +5,19 @@ import android.app.Activity;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageManager.NameNotFoundException;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Environment;
-import android.support.v4.content.ContextCompat;
+import android.provider.MediaStore;
 import android.util.Log;
 
-import java.io.File;
+import androidx.core.content.ContextCompat;
+
+import junit.framework.TestCase;
+
+import org.junit.Test;
+
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -24,23 +30,24 @@ import java.util.UUID;
 import mil.nga.geopackage.BoundingBox;
 import mil.nga.geopackage.GeoPackage;
 import mil.nga.geopackage.GeoPackageException;
+import mil.nga.geopackage.GeoPackageFactory;
 import mil.nga.geopackage.GeoPackageManager;
 import mil.nga.geopackage.attributes.AttributesColumn;
 import mil.nga.geopackage.attributes.AttributesCursor;
 import mil.nga.geopackage.attributes.AttributesDao;
 import mil.nga.geopackage.attributes.AttributesRow;
 import mil.nga.geopackage.attributes.AttributesTable;
-import mil.nga.geopackage.core.contents.Contents;
-import mil.nga.geopackage.core.contents.ContentsDao;
-import mil.nga.geopackage.core.contents.ContentsDataType;
-import mil.nga.geopackage.core.srs.SpatialReferenceSystem;
-import mil.nga.geopackage.core.srs.SpatialReferenceSystemDao;
+import mil.nga.geopackage.attributes.AttributesTableMetadata;
+import mil.nga.geopackage.contents.Contents;
+import mil.nga.geopackage.contents.ContentsDao;
+import mil.nga.geopackage.contents.ContentsDataType;
 import mil.nga.geopackage.db.DateConverter;
 import mil.nga.geopackage.db.GeoPackageDataType;
 import mil.nga.geopackage.extension.CrsWktExtension;
+import mil.nga.geopackage.extension.ExtensionsDao;
 import mil.nga.geopackage.extension.GeometryExtensions;
-import mil.nga.geopackage.extension.RTreeIndexExtension;
 import mil.nga.geopackage.extension.WebPExtension;
+import mil.nga.geopackage.extension.coverage.CoverageData;
 import mil.nga.geopackage.extension.coverage.CoverageDataPng;
 import mil.nga.geopackage.extension.coverage.CoverageDataTiff;
 import mil.nga.geopackage.extension.coverage.GriddedCoverage;
@@ -49,8 +56,27 @@ import mil.nga.geopackage.extension.coverage.GriddedCoverageDataType;
 import mil.nga.geopackage.extension.coverage.GriddedCoverageEncodingType;
 import mil.nga.geopackage.extension.coverage.GriddedTile;
 import mil.nga.geopackage.extension.coverage.GriddedTileDao;
-import mil.nga.geopackage.extension.properties.PropertiesExtension;
-import mil.nga.geopackage.extension.properties.PropertyNames;
+import mil.nga.geopackage.extension.metadata.Metadata;
+import mil.nga.geopackage.extension.metadata.MetadataDao;
+import mil.nga.geopackage.extension.metadata.MetadataExtension;
+import mil.nga.geopackage.extension.metadata.MetadataScopeType;
+import mil.nga.geopackage.extension.metadata.reference.MetadataReference;
+import mil.nga.geopackage.extension.metadata.reference.MetadataReferenceDao;
+import mil.nga.geopackage.extension.metadata.reference.ReferenceScopeType;
+import mil.nga.geopackage.extension.nga.NGAExtensions;
+import mil.nga.geopackage.extension.nga.contents.ContentsId;
+import mil.nga.geopackage.extension.nga.contents.ContentsIdExtension;
+import mil.nga.geopackage.extension.nga.index.FeatureTableIndex;
+import mil.nga.geopackage.extension.nga.link.FeatureTileTableLinker;
+import mil.nga.geopackage.extension.nga.properties.PropertiesExtension;
+import mil.nga.geopackage.extension.nga.properties.PropertyNames;
+import mil.nga.geopackage.extension.nga.scale.TileScaling;
+import mil.nga.geopackage.extension.nga.scale.TileScalingType;
+import mil.nga.geopackage.extension.nga.scale.TileTableScaling;
+import mil.nga.geopackage.extension.nga.style.FeatureStyleExtension;
+import mil.nga.geopackage.extension.nga.style.FeatureTableStyles;
+import mil.nga.geopackage.extension.nga.style.IconRow;
+import mil.nga.geopackage.extension.nga.style.StyleRow;
 import mil.nga.geopackage.extension.related.ExtendedRelation;
 import mil.nga.geopackage.extension.related.RelatedTablesExtension;
 import mil.nga.geopackage.extension.related.UserMappingDao;
@@ -61,10 +87,18 @@ import mil.nga.geopackage.extension.related.dublin.DublinCoreType;
 import mil.nga.geopackage.extension.related.media.MediaDao;
 import mil.nga.geopackage.extension.related.media.MediaRow;
 import mil.nga.geopackage.extension.related.media.MediaTable;
+import mil.nga.geopackage.extension.related.media.MediaTableMetadata;
 import mil.nga.geopackage.extension.related.simple.SimpleAttributesDao;
 import mil.nga.geopackage.extension.related.simple.SimpleAttributesRow;
 import mil.nga.geopackage.extension.related.simple.SimpleAttributesTable;
-import mil.nga.geopackage.factory.GeoPackageFactory;
+import mil.nga.geopackage.extension.related.simple.SimpleAttributesTableMetadata;
+import mil.nga.geopackage.extension.rtree.RTreeIndexExtension;
+import mil.nga.geopackage.extension.schema.SchemaExtension;
+import mil.nga.geopackage.extension.schema.columns.DataColumns;
+import mil.nga.geopackage.extension.schema.columns.DataColumnsDao;
+import mil.nga.geopackage.extension.schema.constraints.DataColumnConstraintType;
+import mil.nga.geopackage.extension.schema.constraints.DataColumnConstraints;
+import mil.nga.geopackage.extension.schema.constraints.DataColumnConstraintsDao;
 import mil.nga.geopackage.features.columns.GeometryColumns;
 import mil.nga.geopackage.features.columns.GeometryColumnsDao;
 import mil.nga.geopackage.features.index.FeatureIndexManager;
@@ -76,32 +110,29 @@ import mil.nga.geopackage.features.user.FeatureRow;
 import mil.nga.geopackage.features.user.FeatureTable;
 import mil.nga.geopackage.geom.GeoPackageGeometryData;
 import mil.nga.geopackage.io.BitmapConverter;
-import mil.nga.geopackage.metadata.Metadata;
-import mil.nga.geopackage.metadata.MetadataDao;
-import mil.nga.geopackage.metadata.MetadataScopeType;
-import mil.nga.geopackage.metadata.reference.MetadataReference;
-import mil.nga.geopackage.metadata.reference.MetadataReferenceDao;
-import mil.nga.geopackage.metadata.reference.ReferenceScopeType;
-import mil.nga.geopackage.schema.columns.DataColumns;
-import mil.nga.geopackage.schema.columns.DataColumnsDao;
-import mil.nga.geopackage.schema.constraints.DataColumnConstraintType;
-import mil.nga.geopackage.schema.constraints.DataColumnConstraints;
-import mil.nga.geopackage.schema.constraints.DataColumnConstraintsDao;
+import mil.nga.geopackage.srs.SpatialReferenceSystem;
+import mil.nga.geopackage.srs.SpatialReferenceSystemDao;
+import mil.nga.geopackage.style.Color;
+import mil.nga.geopackage.style.ColorConstants;
 import mil.nga.geopackage.test.extension.related.RelatedTablesUtils;
 import mil.nga.geopackage.tiles.TileBoundingBoxUtils;
 import mil.nga.geopackage.tiles.TileGenerator;
 import mil.nga.geopackage.tiles.TileGrid;
 import mil.nga.geopackage.tiles.features.DefaultFeatureTiles;
+import mil.nga.geopackage.tiles.features.FeaturePreview;
 import mil.nga.geopackage.tiles.features.FeatureTileGenerator;
 import mil.nga.geopackage.tiles.features.FeatureTiles;
 import mil.nga.geopackage.tiles.matrix.TileMatrix;
 import mil.nga.geopackage.tiles.matrix.TileMatrixDao;
 import mil.nga.geopackage.tiles.matrixset.TileMatrixSet;
 import mil.nga.geopackage.tiles.matrixset.TileMatrixSetDao;
+import mil.nga.geopackage.tiles.user.TileCursor;
 import mil.nga.geopackage.tiles.user.TileDao;
 import mil.nga.geopackage.tiles.user.TileRow;
 import mil.nga.geopackage.tiles.user.TileTable;
+import mil.nga.geopackage.tiles.user.TileTableMetadata;
 import mil.nga.geopackage.user.custom.UserCustomColumn;
+import mil.nga.geopackage.validate.GeoPackageValidate;
 import mil.nga.sf.CircularString;
 import mil.nga.sf.CompoundCurve;
 import mil.nga.sf.CurvePolygon;
@@ -142,9 +173,13 @@ public class GeoPackageExample extends BaseTestCase {
     private static final boolean RELATED_TABLES_MEDIA = true;
     private static final boolean RELATED_TABLES_FEATURES = true;
     private static final boolean RELATED_TABLES_SIMPLE_ATTRIBUTES = true;
+    private static final boolean RELATED_TABLES_TILES = true;
     private static final boolean GEOMETRY_INDEX = true;
     private static final boolean FEATURE_TILE_LINK = true;
+    private static final boolean TILE_SCALING = true;
     private static final boolean PROPERTIES = true;
+    private static final boolean CONTENTS_ID = true;
+    private static final boolean FEATURE_STYLE = true;
 
     private static final String ID_COLUMN = "id";
     private static final String GEOMETRY_COLUMN = "geometry";
@@ -161,12 +196,151 @@ public class GeoPackageExample extends BaseTestCase {
     private static final String LOG_NAME = GeoPackageExample.class.getSimpleName();
 
     /**
-     * Create the GeoPackage example file
+     * Test making the GeoPackage example
      *
      * @throws SQLException upon error
      * @throws IOException  upon error
      */
-    public void testExample() throws SQLException, IOException {
+    @Test
+    public void testExample() throws SQLException, IOException, NameNotFoundException {
+
+        create();
+
+        GeoPackageManager manager = GeoPackageFactory.getManager(activity);
+        GeoPackage geoPackage = manager.open(GEOPACKAGE_NAME);
+        TestCase.assertNotNull(geoPackage);
+        geoPackage.close();
+
+        TestCase.assertTrue(manager.delete(GEOPACKAGE_NAME));
+    }
+
+    /**
+     * Test the GeoPackage example extensions
+     *
+     * @throws SQLException upon error
+     * @throws IOException  upon error
+     */
+    @Test
+    public void testExampleExtensions() throws SQLException, IOException, NameNotFoundException {
+
+        create();
+
+        GeoPackageManager manager = GeoPackageFactory.getManager(activity);
+        GeoPackage geoPackage = manager.open(GEOPACKAGE_NAME);
+
+        validateExtensions(geoPackage, true);
+        validateNGAExtensions(geoPackage, true);
+
+        geoPackage.getExtensionManager().deleteExtensions();
+
+        validateExtensions(geoPackage, false);
+        validateNGAExtensions(geoPackage, false);
+
+        geoPackage.close();
+
+        TestCase.assertTrue(manager.delete(GEOPACKAGE_NAME));
+    }
+
+    /**
+     * Test the GeoPackage example NGA extensions
+     *
+     * @throws SQLException upon error
+     * @throws IOException  upon error
+     */
+    @Test
+    public void testExampleNGAExtensions() throws SQLException, IOException, NameNotFoundException {
+
+        create();
+
+        GeoPackageManager manager = GeoPackageFactory.getManager(activity);
+        GeoPackage geoPackage = manager.open(GEOPACKAGE_NAME);
+
+        validateExtensions(geoPackage, true);
+        validateNGAExtensions(geoPackage, true);
+
+        NGAExtensions extensions = new NGAExtensions(geoPackage);
+        extensions.deleteExtensions();
+
+        validateExtensions(geoPackage, true);
+        validateNGAExtensions(geoPackage, false);
+
+        geoPackage.close();
+
+        TestCase.assertTrue(manager.delete(GEOPACKAGE_NAME));
+    }
+
+    private void validateExtensions(GeoPackage geoPackage, boolean has)
+            throws SQLException {
+
+        ExtensionsDao extensionsDao = geoPackage.getExtensionsDao();
+
+        TestCase.assertEquals(has && RTREE_SPATIAL_INDEX,
+                new RTreeIndexExtension(geoPackage).has());
+        TestCase.assertEquals(
+                has
+                        && (RELATED_TABLES_FEATURES || RELATED_TABLES_MEDIA || RELATED_TABLES_SIMPLE_ATTRIBUTES),
+                new RelatedTablesExtension(geoPackage).has());
+        TestCase.assertEquals(
+                has && COVERAGE_DATA,
+                extensionsDao.isTableExists()
+                        && !extensionsDao.queryByExtension(
+                        CoverageData.EXTENSION_NAME).isEmpty());
+
+        TestCase.assertEquals(has && SCHEMA,
+                new SchemaExtension(geoPackage).has());
+        TestCase.assertEquals(has && METADATA,
+                new MetadataExtension(geoPackage).has());
+        TestCase.assertEquals(
+                has && NON_LINEAR_GEOMETRY_TYPES,
+                extensionsDao.isTableExists()
+                        && !extensionsDao
+                        .queryByExtension(
+                                GeometryExtensions
+                                        .getExtensionName(GeometryType.CIRCULARSTRING))
+                        .isEmpty());
+        TestCase.assertEquals(has && WEBP, extensionsDao.isTableExists()
+                && !extensionsDao
+                .queryByExtension(WebPExtension.EXTENSION_NAME)
+                .isEmpty());
+        TestCase.assertEquals(has && CRS_WKT,
+                new CrsWktExtension(geoPackage).has());
+
+    }
+
+    private void validateNGAExtensions(GeoPackage geoPackage, boolean has)
+            throws SQLException {
+
+        ExtensionsDao extensionsDao = geoPackage.getExtensionsDao();
+
+        TestCase.assertEquals(
+                has && GEOMETRY_INDEX,
+                extensionsDao.isTableExists()
+                        && !extensionsDao.queryByExtension(
+                        FeatureTableIndex.EXTENSION_NAME).isEmpty());
+        TestCase.assertEquals(has && FEATURE_TILE_LINK,
+                new FeatureTileTableLinker(geoPackage).has());
+        TestCase.assertEquals(
+                has && TILE_SCALING,
+                extensionsDao.isTableExists()
+                        && !extensionsDao.queryByExtension(
+                        TileTableScaling.EXTENSION_NAME).isEmpty());
+        TestCase.assertEquals(has && PROPERTIES, new PropertiesExtension(
+                geoPackage).has());
+        TestCase.assertEquals(has && CONTENTS_ID, new ContentsIdExtension(
+                geoPackage).has());
+        TestCase.assertEquals(has && FEATURE_STYLE, new FeatureStyleExtension(
+                geoPackage).has());
+
+    }
+
+    /**
+     * Create the GeoPackage example file
+     *
+     * @throws SQLException          upon error
+     * @throws IOException           upon error
+     * @throws NameNotFoundException upon error
+     */
+    private void create() throws SQLException, IOException, NameNotFoundException {
 
         Log.i(LOG_NAME, "Creating: " + GEOPACKAGE_NAME);
         GeoPackage geoPackage = createGeoPackage(activity);
@@ -174,6 +348,11 @@ public class GeoPackageExample extends BaseTestCase {
         Log.i(LOG_NAME, "CRS WKT Extension: " + CRS_WKT);
         if (CRS_WKT) {
             createCrsWktExtension(geoPackage);
+        }
+
+        Log.i(LOG_NAME, "Contents Id: " + CONTENTS_ID);
+        if (CONTENTS_ID) {
+            createContentsIdExtension(geoPackage);
         }
 
         Log.i(LOG_NAME, "Features: " + FEATURES);
@@ -189,6 +368,11 @@ public class GeoPackageExample extends BaseTestCase {
             Log.i(LOG_NAME, "Geometry Index Extension: " + GEOMETRY_INDEX);
             if (GEOMETRY_INDEX) {
                 createGeometryIndexExtension(activity, geoPackage);
+            }
+
+            Log.i(LOG_NAME, "Feature Style Extension: " + FEATURE_STYLE);
+            if (FEATURE_STYLE) {
+                createFeatureStyleExtension(geoPackage);
             }
 
             Log.i(LOG_NAME, "Feature Tile Link Extension: "
@@ -222,6 +406,7 @@ public class GeoPackageExample extends BaseTestCase {
         } else {
             Log.i(LOG_NAME, "Schema Extension: " + FEATURES);
             Log.i(LOG_NAME, "Geometry Index Extension: " + FEATURES);
+            Log.i(LOG_NAME, "Feature Style Extension: " + FEATURES);
             Log.i(LOG_NAME, "Feature Tile Link Extension: " + FEATURES);
             Log.i(LOG_NAME, "Non-Linear Geometry Types Extension: "
                     + FEATURES);
@@ -241,8 +426,20 @@ public class GeoPackageExample extends BaseTestCase {
                 createWebPExtension(activity, geoPackage);
             }
 
+            Log.i(LOG_NAME, "Tile Scaling Extension: " + TILE_SCALING);
+            if (TILE_SCALING) {
+                createTileScalingExtension(geoPackage);
+            }
+
+            Log.i(LOG_NAME, "Related Tables Tiles Extension: " + RELATED_TABLES_TILES);
+            if (RELATED_TABLES_TILES) {
+                createRelatedTablesTilesExtension(geoPackage);
+            }
+
         } else {
             Log.i(LOG_NAME, "WebP Extension: " + TILES);
+            Log.i(LOG_NAME, "Tile Scaling Extension: " + TILES);
+            Log.i(LOG_NAME, "Related Tables Tiles Extension: " + TILES);
         }
 
         Log.i(LOG_NAME, "Attributes: " + ATTRIBUTES);
@@ -277,28 +474,23 @@ public class GeoPackageExample extends BaseTestCase {
 
     }
 
-    private static void exportGeoPackage(Context context) {
+    private static void exportGeoPackage(Context context) throws IOException {
 
         if (ContextCompat.checkSelfPermission(context,
                 Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
 
             GeoPackageManager manager = GeoPackageFactory.getManager(context);
 
-            File exportDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
-            if (!exportDirectory.exists()) {
-                exportDirectory.mkdir();
-            }
+            String name = GeoPackageValidate.addGeoPackageExtension(GEOPACKAGE_NAME + "-" + System.currentTimeMillis());
+            manager.exportGeoPackage(GEOPACKAGE_NAME,
+                    name,
+                    Environment.DIRECTORY_DOCUMENTS,
+                    MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL));
 
-            File exportedFile = new File(exportDirectory, GEOPACKAGE_NAME + "."
-                    + TestConstants.GEO_PACKAGE_EXTENSION);
-            if (exportedFile.exists()) {
-                exportedFile.delete();
-            }
-            manager.exportGeoPackage(GEOPACKAGE_NAME, exportDirectory);
-
-            Log.i(LOG_NAME, "Created: " + exportedFile.getPath());
+            String path = "/storage/emulated/0/Documents/" + name;
+            Log.i(LOG_NAME, "Created: " + path);
             Log.i(LOG_NAME, "To copy GeoPackage, run: "
-                    + "adb pull /storage/emulated/0/Documents/example.gpkg ~/git/geopackage-android");
+                    + "adb pull " + path + " " + GeoPackageValidate.addGeoPackageExtension(GEOPACKAGE_NAME));
         } else {
             Log.w(LOG_NAME,
                     "To export the GeoPackage, grant GeoPackageSDKTests Storage permission on the emulator or phone");
@@ -334,45 +526,75 @@ public class GeoPackageExample extends BaseTestCase {
 
         geoPackage.createGeometryColumnsTable();
 
-        Point point1 = new Point(-104.801918, 39.720014);
-        String point1Name = "BIT Systems";
+        createFeatures1(geoPackage, srs);
+        createFeatures2(geoPackage, srs);
 
-        createFeatures(geoPackage, srs, "point1", GeometryType.POINT, point1,
-                point1Name);
+    }
 
-        Point point2 = new Point(-77.196736, 38.753370);
-        String point2Name = "NGA";
+    private static void createFeatures1(GeoPackage geoPackage,
+                                        SpatialReferenceSystem srs) throws SQLException {
 
-        createFeatures(geoPackage, srs, "point2", GeometryType.POINT, point2,
-                point2Name);
+        List<Geometry> points = new ArrayList<>();
+        List<String> pointNames = new ArrayList<>();
+
+        points.add(new Point(-104.801918, 39.720014));
+        pointNames.add("BIT Systems");
+
+        points.add(new Point(-104.802987, 39.717703));
+        pointNames.add("Community College of Aurora CentreTech Campus");
+
+        points.add(new Point(-104.807496, 39.714085));
+        pointNames.add("DeLaney Community Farm");
+
+        points.add(new Point(-104.799480, 39.714729));
+        pointNames.add("Centre Hills Disc Golf Course");
+
+        createFeatures(geoPackage, srs, "point1", GeometryType.POINT, points,
+                pointNames);
+
+        List<Geometry> lines = new ArrayList<>();
+        List<String> lineNames = new ArrayList<>();
 
         LineString line1 = new LineString();
-        String line1Name = "East Lockheed Drive";
         line1.addPoint(new Point(-104.800614, 39.720721));
         line1.addPoint(new Point(-104.802174, 39.720726));
         line1.addPoint(new Point(-104.802584, 39.720660));
         line1.addPoint(new Point(-104.803088, 39.720477));
         line1.addPoint(new Point(-104.803474, 39.720209));
 
-        createFeatures(geoPackage, srs, "line1", GeometryType.LINESTRING,
-                line1, line1Name);
+        lines.add(line1);
+        lineNames.add("East Lockheed Drive");
 
         LineString line2 = new LineString();
-        String line2Name = "NGA";
-        line2.addPoint(new Point(-77.196650, 38.756501));
-        line2.addPoint(new Point(-77.196414, 38.755979));
-        line2.addPoint(new Point(-77.195518, 38.755208));
-        line2.addPoint(new Point(-77.195303, 38.755272));
-        line2.addPoint(new Point(-77.195351, 38.755459));
-        line2.addPoint(new Point(-77.195863, 38.755697));
-        line2.addPoint(new Point(-77.196328, 38.756069));
-        line2.addPoint(new Point(-77.196568, 38.756526));
+        line2.addPoint(new Point(-104.809612, 39.718379));
+        line2.addPoint(new Point(-104.806638, 39.718372));
+        line2.addPoint(new Point(-104.806236, 39.718439));
+        line2.addPoint(new Point(-104.805939, 39.718536));
+        line2.addPoint(new Point(-104.805654, 39.718677));
+        line2.addPoint(new Point(-104.803652, 39.720095));
 
-        createFeatures(geoPackage, srs, "line2", GeometryType.LINESTRING,
-                line2, line2Name);
+        lines.add(line2);
+        lineNames.add("E 1st Ave");
+
+        LineString line3 = new LineString();
+        line3.addPoint(new Point(-104.806344, 39.722425));
+        line3.addPoint(new Point(-104.805854, 39.722634));
+        line3.addPoint(new Point(-104.805656, 39.722647));
+        line3.addPoint(new Point(-104.803749, 39.722641));
+        line3.addPoint(new Point(-104.803769, 39.721849));
+        line3.addPoint(new Point(-104.803806, 39.721725));
+        line3.addPoint(new Point(-104.804382, 39.720865));
+
+        lines.add(line3);
+        lineNames.add("E Centretech Cir");
+
+        createFeatures(geoPackage, srs, "line1", GeometryType.LINESTRING,
+                lines, lineNames);
+
+        List<Geometry> polygons = new ArrayList<>();
+        List<String> polygonNames = new ArrayList<>();
 
         Polygon polygon1 = new Polygon();
-        String polygon1Name = "BIT Systems";
         LineString ring1 = new LineString();
         ring1.addPoint(new Point(-104.802246, 39.720343));
         ring1.addPoint(new Point(-104.802246, 39.719753));
@@ -390,59 +612,163 @@ public class GeoPackageExample extends BaseTestCase {
         ring1.addPoint(new Point(-104.802246, 39.720343));
         polygon1.addRing(ring1);
 
-        createFeatures(geoPackage, srs, "polygon1", GeometryType.POLYGON,
-                polygon1, polygon1Name);
+        polygons.add(polygon1);
+        polygonNames.add("BIT Systems");
 
         Polygon polygon2 = new Polygon();
-        String polygon2Name = "NGA Visitor Center";
+
         LineString ring2 = new LineString();
-        ring2.addPoint(new Point(-77.195299, 38.755159));
-        ring2.addPoint(new Point(-77.195203, 38.755080));
-        ring2.addPoint(new Point(-77.195410, 38.754930));
-        ring2.addPoint(new Point(-77.195350, 38.754884));
-        ring2.addPoint(new Point(-77.195228, 38.754966));
-        ring2.addPoint(new Point(-77.195135, 38.754889));
-        ring2.addPoint(new Point(-77.195048, 38.754956));
-        ring2.addPoint(new Point(-77.194986, 38.754906));
-        ring2.addPoint(new Point(-77.194897, 38.754976));
-        ring2.addPoint(new Point(-77.194953, 38.755025));
-        ring2.addPoint(new Point(-77.194763, 38.755173));
-        ring2.addPoint(new Point(-77.194827, 38.755224));
-        ring2.addPoint(new Point(-77.195012, 38.755082));
-        ring2.addPoint(new Point(-77.195041, 38.755104));
-        ring2.addPoint(new Point(-77.195028, 38.755116));
-        ring2.addPoint(new Point(-77.195090, 38.755167));
-        ring2.addPoint(new Point(-77.195106, 38.755154));
-        ring2.addPoint(new Point(-77.195205, 38.755233));
-        ring2.addPoint(new Point(-77.195299, 38.755159));
+        ring2.addPoint(new Point(-104.802259, 39.719604));
+        ring2.addPoint(new Point(-104.802260, 39.719550));
+        ring2.addPoint(new Point(-104.802281, 39.719416));
+        ring2.addPoint(new Point(-104.802332, 39.719372));
+        ring2.addPoint(new Point(-104.802081, 39.719240));
+        ring2.addPoint(new Point(-104.802044, 39.719290));
+        ring2.addPoint(new Point(-104.802027, 39.719278));
+        ring2.addPoint(new Point(-104.802044, 39.719229));
+        ring2.addPoint(new Point(-104.801785, 39.719129));
+        ring2.addPoint(new Point(-104.801639, 39.719413));
+        ring2.addPoint(new Point(-104.801649, 39.719472));
+        ring2.addPoint(new Point(-104.801694, 39.719524));
+        ring2.addPoint(new Point(-104.801753, 39.719550));
+        ring2.addPoint(new Point(-104.801750, 39.719606));
+        ring2.addPoint(new Point(-104.801940, 39.719606));
+        ring2.addPoint(new Point(-104.801939, 39.719555));
+        ring2.addPoint(new Point(-104.801977, 39.719556));
+        ring2.addPoint(new Point(-104.801979, 39.719606));
+        ring2.addPoint(new Point(-104.802259, 39.719604));
         polygon2.addRing(ring2);
 
-        createFeatures(geoPackage, srs, "polygon2", GeometryType.POLYGON,
-                polygon2, polygon2Name);
+        LineString hole2 = new LineString();
+        hole2.addPoint(new Point(-104.802130, 39.719440));
+        hole2.addPoint(new Point(-104.802133, 39.719490));
+        hole2.addPoint(new Point(-104.802148, 39.719490));
+        hole2.addPoint(new Point(-104.802180, 39.719473));
+        hole2.addPoint(new Point(-104.802187, 39.719456));
+        hole2.addPoint(new Point(-104.802182, 39.719439));
+        hole2.addPoint(new Point(-104.802088, 39.719387));
+        hole2.addPoint(new Point(-104.802047, 39.719427));
+        hole2.addPoint(new Point(-104.801858, 39.719342));
+        hole2.addPoint(new Point(-104.801883, 39.719294));
+        hole2.addPoint(new Point(-104.801832, 39.719284));
+        hole2.addPoint(new Point(-104.801787, 39.719298));
+        hole2.addPoint(new Point(-104.801763, 39.719331));
+        hole2.addPoint(new Point(-104.801823, 39.719352));
+        hole2.addPoint(new Point(-104.801790, 39.719420));
+        hole2.addPoint(new Point(-104.801722, 39.719404));
+        hole2.addPoint(new Point(-104.801715, 39.719445));
+        hole2.addPoint(new Point(-104.801748, 39.719484));
+        hole2.addPoint(new Point(-104.801809, 39.719494));
+        hole2.addPoint(new Point(-104.801816, 39.719439));
+        hole2.addPoint(new Point(-104.802130, 39.719440));
+        polygon2.addRing(hole2);
 
-        List<Geometry> geometries1 = new ArrayList<>();
-        List<String> geometries1Names = new ArrayList<>();
-        geometries1.add(point1);
-        geometries1Names.add(point1Name);
-        geometries1.add(line1);
-        geometries1Names.add(line1Name);
-        geometries1.add(polygon1);
-        geometries1Names.add(polygon1Name);
+        polygons.add(polygon2);
+        polygonNames.add("BIT Systems Visitor Parking");
+
+        Polygon polygon3 = new Polygon();
+        LineString ring3 = new LineString();
+        ring3.addPoint(new Point(-104.802867, 39.718122));
+        ring3.addPoint(new Point(-104.802369, 39.717845));
+        ring3.addPoint(new Point(-104.802571, 39.717630));
+        ring3.addPoint(new Point(-104.803066, 39.717909));
+        ring3.addPoint(new Point(-104.802867, 39.718122));
+        polygon3.addRing(ring3);
+
+        polygons.add(polygon3);
+        polygonNames.add("CCA Administration Building");
+
+        createFeatures(geoPackage, srs, "polygon1", GeometryType.POLYGON,
+                polygons, polygonNames);
+
+        List<Geometry> geometries = new ArrayList<>();
+        List<String> geometryNames = new ArrayList<>();
+        geometries.addAll(points);
+        geometryNames.addAll(pointNames);
+        geometries.addAll(lines);
+        geometryNames.addAll(lineNames);
+        geometries.addAll(polygons);
+        geometryNames.addAll(polygonNames);
 
         createFeatures(geoPackage, srs, "geometry1", GeometryType.GEOMETRY,
-                geometries1, geometries1Names);
+                geometries, geometryNames);
 
-        List<Geometry> geometries2 = new ArrayList<>();
-        List<String> geometries2Names = new ArrayList<>();
-        geometries2.add(point2);
-        geometries2Names.add(point2Name);
-        geometries2.add(line2);
-        geometries2Names.add(line2Name);
-        geometries2.add(polygon2);
-        geometries2Names.add(polygon2Name);
+    }
+
+    private static void createFeatures2(GeoPackage geoPackage,
+                                        SpatialReferenceSystem srs) throws SQLException {
+
+        List<Geometry> points = new ArrayList<>();
+        List<String> pointNames = new ArrayList<>();
+
+        points.add(new Point(-77.196736, 38.753370));
+        pointNames.add("NGA");
+
+        createFeatures(geoPackage, srs, "point2", GeometryType.POINT, points,
+                pointNames);
+
+        List<Geometry> lines = new ArrayList<>();
+        List<String> lineNames = new ArrayList<>();
+
+        LineString line1 = new LineString();
+        line1.addPoint(new Point(-77.196650, 38.756501));
+        line1.addPoint(new Point(-77.196414, 38.755979));
+        line1.addPoint(new Point(-77.195518, 38.755208));
+        line1.addPoint(new Point(-77.195303, 38.755272));
+        line1.addPoint(new Point(-77.195351, 38.755459));
+        line1.addPoint(new Point(-77.195863, 38.755697));
+        line1.addPoint(new Point(-77.196328, 38.756069));
+        line1.addPoint(new Point(-77.196568, 38.756526));
+
+        lines.add(line1);
+        lineNames.add("NGA");
+
+        createFeatures(geoPackage, srs, "line2", GeometryType.LINESTRING,
+                lines, lineNames);
+
+        List<Geometry> polygons = new ArrayList<>();
+        List<String> polygonNames = new ArrayList<>();
+
+        Polygon polygon1 = new Polygon();
+        LineString ring1 = new LineString();
+        ring1.addPoint(new Point(-77.195299, 38.755159));
+        ring1.addPoint(new Point(-77.195203, 38.755080));
+        ring1.addPoint(new Point(-77.195410, 38.754930));
+        ring1.addPoint(new Point(-77.195350, 38.754884));
+        ring1.addPoint(new Point(-77.195228, 38.754966));
+        ring1.addPoint(new Point(-77.195135, 38.754889));
+        ring1.addPoint(new Point(-77.195048, 38.754956));
+        ring1.addPoint(new Point(-77.194986, 38.754906));
+        ring1.addPoint(new Point(-77.194897, 38.754976));
+        ring1.addPoint(new Point(-77.194953, 38.755025));
+        ring1.addPoint(new Point(-77.194763, 38.755173));
+        ring1.addPoint(new Point(-77.194827, 38.755224));
+        ring1.addPoint(new Point(-77.195012, 38.755082));
+        ring1.addPoint(new Point(-77.195041, 38.755104));
+        ring1.addPoint(new Point(-77.195028, 38.755116));
+        ring1.addPoint(new Point(-77.195090, 38.755167));
+        ring1.addPoint(new Point(-77.195106, 38.755154));
+        ring1.addPoint(new Point(-77.195205, 38.755233));
+        ring1.addPoint(new Point(-77.195299, 38.755159));
+        polygon1.addRing(ring1);
+
+        polygons.add(polygon1);
+        polygonNames.add("NGA Visitor Center");
+
+        createFeatures(geoPackage, srs, "polygon2", GeometryType.POLYGON,
+                polygons, polygonNames);
+
+        List<Geometry> geometries = new ArrayList<>();
+        List<String> geometryNames = new ArrayList<>();
+        geometries.addAll(points);
+        geometryNames.addAll(pointNames);
+        geometries.addAll(lines);
+        geometryNames.addAll(lineNames);
+        geometries.addAll(polygons);
+        geometryNames.addAll(polygonNames);
 
         createFeatures(geoPackage, srs, "geometry2", GeometryType.GEOMETRY,
-                geometries2, geometries2Names);
+                geometries, geometryNames);
 
     }
 
@@ -486,32 +812,28 @@ public class GeoPackageExample extends BaseTestCase {
 
         List<FeatureColumn> columns = new ArrayList<FeatureColumn>();
 
-        int columnNumber = 0;
-        columns.add(FeatureColumn.createPrimaryKeyColumn(columnNumber++,
-                ID_COLUMN));
-        columns.add(FeatureColumn.createGeometryColumn(columnNumber++,
-                GEOMETRY_COLUMN, type, false, null));
-        columns.add(FeatureColumn.createColumn(columnNumber++, TEXT_COLUMN,
+        columns.add(FeatureColumn.createPrimaryKeyColumn(ID_COLUMN));
+        columns.add(FeatureColumn.createGeometryColumn(GEOMETRY_COLUMN, type));
+        columns.add(FeatureColumn.createColumn(TEXT_COLUMN,
                 GeoPackageDataType.TEXT, false, ""));
-        columns.add(FeatureColumn.createColumn(columnNumber++, REAL_COLUMN,
-                GeoPackageDataType.REAL, false, null));
-        columns.add(FeatureColumn.createColumn(columnNumber++, BOOLEAN_COLUMN,
-                GeoPackageDataType.BOOLEAN, false, null));
-        columns.add(FeatureColumn.createColumn(columnNumber++, BLOB_COLUMN,
-                GeoPackageDataType.BLOB, false, null));
-        columns.add(FeatureColumn.createColumn(columnNumber++, INTEGER_COLUMN,
-                GeoPackageDataType.INTEGER, false, null));
-        columns.add(FeatureColumn.createColumn(columnNumber++,
-                TEXT_LIMITED_COLUMN, GeoPackageDataType.TEXT, (long) UUID
-                        .randomUUID().toString().length(), false, null));
-        columns.add(FeatureColumn
-                .createColumn(columnNumber++, BLOB_LIMITED_COLUMN,
-                        GeoPackageDataType.BLOB, (long) UUID.randomUUID()
-                                .toString().getBytes().length, false, null));
-        columns.add(FeatureColumn.createColumn(columnNumber++, DATE_COLUMN,
-                GeoPackageDataType.DATE, false, null));
-        columns.add(FeatureColumn.createColumn(columnNumber++, DATETIME_COLUMN,
-                GeoPackageDataType.DATETIME, false, null));
+        columns.add(FeatureColumn.createColumn(REAL_COLUMN,
+                GeoPackageDataType.REAL));
+        columns.add(FeatureColumn.createColumn(BOOLEAN_COLUMN,
+                GeoPackageDataType.BOOLEAN));
+        columns.add(FeatureColumn.createColumn(BLOB_COLUMN,
+                GeoPackageDataType.BLOB));
+        columns.add(FeatureColumn.createColumn(INTEGER_COLUMN,
+                GeoPackageDataType.INTEGER));
+        columns.add(FeatureColumn.createColumn(TEXT_LIMITED_COLUMN,
+                GeoPackageDataType.TEXT, (long) UUID.randomUUID().toString()
+                        .length()));
+        columns.add(FeatureColumn.createColumn(BLOB_LIMITED_COLUMN,
+                GeoPackageDataType.BLOB, (long) UUID.randomUUID().toString()
+                        .getBytes().length));
+        columns.add(FeatureColumn.createColumn(DATE_COLUMN,
+                GeoPackageDataType.DATE));
+        columns.add(FeatureColumn.createColumn(DATETIME_COLUMN,
+                GeoPackageDataType.DATETIME));
 
         FeatureTable table = new FeatureTable(tableName, columns);
         geoPackage.createFeatureTable(table);
@@ -544,9 +866,8 @@ public class GeoPackageExample extends BaseTestCase {
 
             FeatureRow newRow = dao.newRow();
 
-            GeoPackageGeometryData geometryData = new GeoPackageGeometryData(
-                    geometryColumns.getSrsId());
-            geometryData.setGeometry(geometry);
+            GeoPackageGeometryData geometryData = GeoPackageGeometryData
+                    .create(geometryColumns.getSrsId(), geometry);
             newRow.setGeometry(geometryData);
 
             newRow.setValue(TEXT_COLUMN, name);
@@ -713,31 +1034,30 @@ public class GeoPackageExample extends BaseTestCase {
 
         List<AttributesColumn> columns = new ArrayList<AttributesColumn>();
 
-        int columnNumber = 1;
-        columns.add(AttributesColumn.createColumn(columnNumber++, TEXT_COLUMN,
+        columns.add(AttributesColumn.createColumn(TEXT_COLUMN,
                 GeoPackageDataType.TEXT, false, ""));
-        columns.add(AttributesColumn.createColumn(columnNumber++, REAL_COLUMN,
-                GeoPackageDataType.REAL, false, null));
-        columns.add(AttributesColumn.createColumn(columnNumber++,
-                BOOLEAN_COLUMN, GeoPackageDataType.BOOLEAN, false, null));
-        columns.add(AttributesColumn.createColumn(columnNumber++, BLOB_COLUMN,
-                GeoPackageDataType.BLOB, false, null));
-        columns.add(AttributesColumn.createColumn(columnNumber++,
-                INTEGER_COLUMN, GeoPackageDataType.INTEGER, false, null));
-        columns.add(AttributesColumn.createColumn(columnNumber++,
-                TEXT_LIMITED_COLUMN, GeoPackageDataType.TEXT, (long) UUID
-                        .randomUUID().toString().length(), false, null));
-        columns.add(AttributesColumn
-                .createColumn(columnNumber++, BLOB_LIMITED_COLUMN,
-                        GeoPackageDataType.BLOB, (long) UUID.randomUUID()
-                                .toString().getBytes().length, false, null));
-        columns.add(AttributesColumn.createColumn(columnNumber++, DATE_COLUMN,
-                GeoPackageDataType.DATE, false, null));
-        columns.add(AttributesColumn.createColumn(columnNumber++,
-                DATETIME_COLUMN, GeoPackageDataType.DATETIME, false, null));
+        columns.add(AttributesColumn.createColumn(REAL_COLUMN,
+                GeoPackageDataType.REAL));
+        columns.add(AttributesColumn.createColumn(BOOLEAN_COLUMN,
+                GeoPackageDataType.BOOLEAN));
+        columns.add(AttributesColumn.createColumn(BLOB_COLUMN,
+                GeoPackageDataType.BLOB));
+        columns.add(AttributesColumn.createColumn(INTEGER_COLUMN,
+                GeoPackageDataType.INTEGER));
+        columns.add(AttributesColumn.createColumn(TEXT_LIMITED_COLUMN,
+                GeoPackageDataType.TEXT, (long) UUID.randomUUID().toString()
+                        .length()));
+        columns.add(AttributesColumn.createColumn(BLOB_LIMITED_COLUMN,
+                GeoPackageDataType.BLOB, (long) UUID.randomUUID().toString()
+                        .getBytes().length));
+        columns.add(AttributesColumn.createColumn(DATE_COLUMN,
+                GeoPackageDataType.DATE));
+        columns.add(AttributesColumn.createColumn(DATETIME_COLUMN,
+                GeoPackageDataType.DATETIME));
 
         AttributesTable attributesTable = geoPackage
-                .createAttributesTableWithId("attributes", columns);
+                .createAttributesTable(
+                        AttributesTableMetadata.create("attributes", columns));
 
         AttributesDao attributesDao = geoPackage
                 .getAttributesDao(attributesTable.getTableName());
@@ -784,10 +1104,8 @@ public class GeoPackageExample extends BaseTestCase {
         for (String featureTable : featureTables) {
 
             FeatureDao featureDao = geoPackage.getFeatureDao(featureTable);
-            FeatureTiles featureTiles = new DefaultFeatureTiles(context, featureDao);
-
-            FeatureIndexManager indexer = new FeatureIndexManager(context, geoPackage, featureDao);
-            featureTiles.setIndexManager(indexer);
+            FeatureTiles featureTiles = new DefaultFeatureTiles(context, geoPackage, featureDao,
+                    context.getResources().getDisplayMetrics().density);
 
             BoundingBox boundingBox = featureDao.getBoundingBox();
             Projection projection = featureDao.getProjection();
@@ -800,9 +1118,10 @@ public class GeoPackageExample extends BaseTestCase {
 
             int zoomLevel = TileBoundingBoxUtils
                     .getZoomLevel(requestBoundingBox);
+            zoomLevel = Math.max(zoomLevel, 8);
             zoomLevel = Math.min(zoomLevel, 19);
 
-            int minZoom = zoomLevel - 2;
+            int minZoom = zoomLevel - 8;
             int maxZoom = zoomLevel + 2;
 
             TileGenerator tileGenerator = new FeatureTileGenerator(context, geoPackage,
@@ -819,9 +1138,10 @@ public class GeoPackageExample extends BaseTestCase {
     private static void createSchemaExtension(GeoPackage geoPackage)
             throws SQLException {
 
-        geoPackage.createDataColumnConstraintsTable();
+        SchemaExtension schemaExtension = new SchemaExtension(geoPackage);
+        schemaExtension.createDataColumnConstraintsTable();
 
-        DataColumnConstraintsDao dao = geoPackage.getDataColumnConstraintsDao();
+        DataColumnConstraintsDao dao = schemaExtension.getDataColumnConstraintsDao();
 
         DataColumnConstraints sampleRange = new DataColumnConstraints();
         sampleRange.setConstraintName("sampleRange");
@@ -875,9 +1195,9 @@ public class GeoPackageExample extends BaseTestCase {
         sampleGlob.setDescription("sampleGlob description");
         dao.create(sampleGlob);
 
-        geoPackage.createDataColumnsTable();
+        schemaExtension.createDataColumnsTable();
 
-        DataColumnsDao dataColumnsDao = geoPackage.getDataColumnsDao();
+        DataColumnsDao dataColumnsDao = schemaExtension.getDataColumnsDao();
 
         List<String> featureTables = geoPackage.getFeatureTables();
         for (String featureTable : featureTables) {
@@ -891,8 +1211,7 @@ public class GeoPackageExample extends BaseTestCase {
                         && column.getDataType() == GeoPackageDataType.INTEGER) {
 
                     DataColumns dataColumns = new DataColumns();
-                    dataColumns.setContents(featureDao.getGeometryColumns()
-                            .getContents());
+                    dataColumns.setContents(featureDao.getContents());
                     dataColumns.setColumnName(column.getName());
                     dataColumns.setName(featureTable);
                     dataColumns.setTitle("TEST_TITLE");
@@ -1076,11 +1395,11 @@ public class GeoPackageExample extends BaseTestCase {
     private static void createMetadataExtension(GeoPackage geoPackage)
             throws SQLException {
 
-        geoPackage.createMetadataTable();
-        MetadataDao metadataDao = geoPackage.getMetadataDao();
+        MetadataExtension metadataExtension = new MetadataExtension(geoPackage);
+        metadataExtension.createMetadataTable();
+        MetadataDao metadataDao = metadataExtension.getMetadataDao();
 
         Metadata metadata1 = new Metadata();
-        metadata1.setId(1);
         metadata1.setMetadataScope(MetadataScopeType.DATASET);
         metadata1.setStandardUri("TEST_URI_1");
         metadata1.setMimeType("text/xml");
@@ -1088,7 +1407,6 @@ public class GeoPackageExample extends BaseTestCase {
         metadataDao.create(metadata1);
 
         Metadata metadata2 = new Metadata();
-        metadata2.setId(2);
         metadata2.setMetadataScope(MetadataScopeType.FEATURE_TYPE);
         metadata2.setStandardUri("TEST_URI_2");
         metadata2.setMimeType("text/xml");
@@ -1096,15 +1414,14 @@ public class GeoPackageExample extends BaseTestCase {
         metadataDao.create(metadata2);
 
         Metadata metadata3 = new Metadata();
-        metadata3.setId(3);
         metadata3.setMetadataScope(MetadataScopeType.TILE);
         metadata3.setStandardUri("TEST_URI_3");
         metadata3.setMimeType("text/xml");
         metadata3.setMetadata("TEST METADATA 3");
         metadataDao.create(metadata3);
 
-        geoPackage.createMetadataReferenceTable();
-        MetadataReferenceDao metadataReferenceDao = geoPackage
+        metadataExtension.createMetadataReferenceTable();
+        MetadataReferenceDao metadataReferenceDao = metadataExtension
                 .getMetadataReferenceDao();
 
         MetadataReference reference1 = new MetadataReference();
@@ -1171,9 +1488,9 @@ public class GeoPackageExample extends BaseTestCase {
         }
 
         CoverageDataPng coverageData = CoverageDataPng
-                .createTileTableWithMetadata(geoPackage, "coverage_png",
+                .createTileTable(geoPackage, TileTableMetadata.create("coverage_png",
                         contentsBoundingBox, contentsSrs.getId(), bbox,
-                        tileMatrixSetSrs.getId());
+                        tileMatrixSetSrs.getId()));
         TileDao tileDao = coverageData.getTileDao();
         TileMatrixSet tileMatrixSet = coverageData.getTileMatrixSet();
 
@@ -1268,9 +1585,9 @@ public class GeoPackageExample extends BaseTestCase {
         }
 
         CoverageDataTiff coverageData = CoverageDataTiff
-                .createTileTableWithMetadata(geoPackage, "coverage_tiff",
+                .createTileTable(geoPackage, TileTableMetadata.create("coverage_tiff",
                         contentsBoundingBox, contentsSrs.getId(), bbox,
-                        tileMatrixSetSrs.getId());
+                        tileMatrixSetSrs.getId()));
         TileDao tileDao = coverageData.getTileDao();
         TileMatrixSet tileMatrixSet = coverageData.getTileMatrixSet();
 
@@ -1366,13 +1683,12 @@ public class GeoPackageExample extends BaseTestCase {
                 geoPackage);
 
         List<UserCustomColumn> additionalMediaColumns = RelatedTablesUtils
-                .createAdditionalUserColumns(MediaTable.numRequiredColumns());
-        MediaTable mediaTable = MediaTable.create("media",
-                additionalMediaColumns);
+                .createAdditionalUserColumns();
+        MediaTable mediaTable = MediaTable.create(
+                MediaTableMetadata.create("media", additionalMediaColumns));
 
         List<UserCustomColumn> additionalMappingColumns = RelatedTablesUtils
-                .createAdditionalUserColumns(UserMappingTable
-                        .numRequiredColumns());
+                .createAdditionalUserColumns();
 
         String tableName1 = "geometry1";
         UserMappingTable userMappingTable1 = UserMappingTable.create(tableName1
@@ -1397,6 +1713,11 @@ public class GeoPackageExample extends BaseTestCase {
                 "NGA", "NGA.jpg", "image/jpeg", "Aerial View of NGA East",
                 "http://www.nga.mil");
 
+        if (CONTENTS_ID) {
+            insertRelatedTablesMediaPreviewExtensionRows(activity, geoPackage,
+                    relatedTables);
+        }
+
     }
 
     private static void insertRelatedTablesMediaExtensionRows(Activity activity, Context testContext,
@@ -1417,9 +1738,8 @@ public class GeoPackageExample extends BaseTestCase {
         TestUtils.copyAssetFileToInternalStorage(activity, testContext, file);
         String mediaImageName = TestUtils.getAssetFileInternalStorageLocation(activity, file);
         Bitmap mediaImage = BitmapFactory.decodeFile(mediaImageName);
-        byte[] mediaData = BitmapConverter.toBytes(mediaImage, Bitmap.CompressFormat.PNG);
 
-        mediaRow.setData(mediaData);
+        mediaRow.setData(mediaImage, Bitmap.CompressFormat.PNG);
         mediaRow.setContentType(contentType);
         RelatedTablesUtils.populateUserRow(mediaDao.getTable(), mediaRow,
                 MediaTable.requiredColumns());
@@ -1451,6 +1771,52 @@ public class GeoPackageExample extends BaseTestCase {
         featureCursor.close();
     }
 
+    private static void insertRelatedTablesMediaPreviewExtensionRows(Activity activity,
+                                                                     GeoPackage geoPackage, RelatedTablesExtension relatedTables)
+            throws IOException {
+
+        ContentsIdExtension contentsId = new ContentsIdExtension(geoPackage);
+
+        MediaTable mediaTable = MediaTable
+                .create(MediaTableMetadata.create("preview"));
+        UserMappingTable userMappingTable = UserMappingTable
+                .create("features_" + mediaTable.getTableName());
+
+        ExtendedRelation relation = relatedTables.addMediaRelationship(
+                ContentsId.TABLE_NAME, mediaTable, userMappingTable);
+
+        MediaDao mediaDao = relatedTables.getMediaDao(relation);
+        UserMappingDao userMappingDao = relatedTables.getMappingDao(relation);
+
+        for (String featureTable : geoPackage.getFeatureTables()) {
+
+            long featureContentsId = contentsId.getOrCreateId(featureTable);
+
+            FeaturePreview preview = new FeaturePreview(activity, geoPackage,
+                    featureTable);
+            try {
+                preview.setManual(true);
+                preview.setBufferPercentage(0.1);
+                Bitmap previewImage = preview.draw();
+                byte[] previewBytes = BitmapConverter.toBytes(previewImage,
+                        Bitmap.CompressFormat.PNG);
+
+                MediaRow mediaRow = mediaDao.newRow();
+                mediaRow.setData(previewBytes);
+                mediaRow.setContentType("image/png");
+                long mediaRowId = mediaDao.create(mediaRow);
+
+                UserMappingRow userMappingRow = userMappingDao.newRow();
+                userMappingRow.setBaseId(featureContentsId);
+                userMappingRow.setRelatedId(mediaRowId);
+                userMappingDao.create(userMappingRow);
+            } finally {
+                preview.close();
+            }
+        }
+
+    }
+
     private static void createRelatedTablesFeaturesExtension(
             GeoPackage geoPackage) {
 
@@ -1467,8 +1833,7 @@ public class GeoPackageExample extends BaseTestCase {
                 geoPackage);
 
         List<UserCustomColumn> additionalMappingColumns = RelatedTablesUtils
-                .createAdditionalUserColumns(UserMappingTable
-                        .numRequiredColumns());
+                .createAdditionalUserColumns();
 
         UserMappingTable userMappingTable = UserMappingTable.create(tableName1
                 + "_" + tableName2, additionalMappingColumns);
@@ -1528,16 +1893,14 @@ public class GeoPackageExample extends BaseTestCase {
                 geoPackage);
 
         List<UserCustomColumn> simpleUserColumns = RelatedTablesUtils
-                .creatSimpleUserColumns(SimpleAttributesTable
-                        .numRequiredColumns());
+                .createSimpleUserColumns();
         SimpleAttributesTable simpleTable = SimpleAttributesTable.create(
-                "simple_attributes", simpleUserColumns);
+                SimpleAttributesTableMetadata.create("simple_attributes", simpleUserColumns));
 
-        String tableName = geoPackage.getAttributesTables().get(0);
+        String tableName = "attributes";
 
         List<UserCustomColumn> additionalMappingColumns = RelatedTablesUtils
-                .createAdditionalUserColumns(UserMappingTable
-                        .numRequiredColumns());
+                .createAdditionalUserColumns();
         UserMappingTable userMappingTable = UserMappingTable.create(tableName
                 + "_" + simpleTable.getTableName(), additionalMappingColumns);
         ExtendedRelation relation = relatedTables
@@ -1612,6 +1975,85 @@ public class GeoPackageExample extends BaseTestCase {
 
     }
 
+    private static void createRelatedTablesTilesExtension(
+            GeoPackage geoPackage) {
+
+        String featureTable = "point2";
+        String tileTable = "nga";
+
+        RelatedTablesExtension relatedTables = new RelatedTablesExtension(
+                geoPackage);
+
+        List<UserCustomColumn> additionalMappingColumns = RelatedTablesUtils
+                .createAdditionalUserColumns();
+
+        UserMappingTable userMappingTable = UserMappingTable.create(
+                featureTable + "_" + tileTable, additionalMappingColumns);
+        ExtendedRelation relation = relatedTables.addTilesRelationship(
+                featureTable, tileTable, userMappingTable);
+
+        UserMappingDao userMappingDao = relatedTables.getMappingDao(relation);
+
+        FeatureDao featureDao = geoPackage
+                .getFeatureDao(relation.getBaseTableName());
+        TileDao tileDao = geoPackage.getTileDao(relation.getRelatedTableName());
+
+        FeatureCursor featureCursor = featureDao.queryForAll();
+        while (featureCursor.moveToNext()) {
+
+            FeatureRow featureRow = featureCursor.getRow();
+            String featureName = featureRow.getValue(TEXT_COLUMN).toString();
+
+            TileCursor tileCursor = tileDao
+                    .queryForTile(tileDao.getMinZoom());
+            while (tileCursor.moveToNext()) {
+
+                TileRow tileRow = tileCursor.getRow();
+
+                UserMappingRow userMappingRow = userMappingDao.newRow();
+                userMappingRow.setBaseId(featureRow.getId());
+                userMappingRow.setRelatedId(tileRow.getId());
+                RelatedTablesUtils.populateUserRow(userMappingDao.getTable(),
+                        userMappingRow, UserMappingTable.requiredColumns());
+                DublinCoreMetadata.setValue(userMappingRow,
+                        DublinCoreType.TITLE, featureName);
+                DublinCoreMetadata.setValue(userMappingRow,
+                        DublinCoreType.DESCRIPTION, featureName);
+                DublinCoreMetadata.setValue(userMappingRow,
+                        DublinCoreType.SOURCE, featureName);
+                userMappingDao.create(userMappingRow);
+            }
+            tileCursor.close();
+
+        }
+        featureCursor.close();
+
+    }
+
+    private static void createTileScalingExtension(GeoPackage geoPackage) {
+
+        for (String tileTable : geoPackage.getTileTables()) {
+
+            TileTableScaling tileTableScaling = new TileTableScaling(
+                    geoPackage, tileTable);
+            TileScaling tileScaling = new TileScaling();
+            tileScaling.setZoomIn(2l);
+            FeatureTileTableLinker linker = new FeatureTileTableLinker(
+                    geoPackage);
+            if (linker.has()
+                    && !linker.getFeatureTablesForTileTable(tileTable)
+                    .isEmpty()) {
+                tileScaling.setScalingType(TileScalingType.IN);
+            } else {
+                tileScaling.setScalingType(TileScalingType.IN_OUT);
+                tileScaling.setZoomOut(2l);
+            }
+            tileTableScaling.create(tileScaling);
+
+        }
+
+    }
+
     private static void createPropertiesExtension(GeoPackage geoPackage) {
 
         PropertiesExtension properties = new PropertiesExtension(geoPackage);
@@ -1619,8 +2061,8 @@ public class GeoPackageExample extends BaseTestCase {
         String dateTime = DateConverter.dateTimeConverter().stringValue(
                 new Date());
 
-        properties.addValue(PropertyNames.TITLE, "GeoPackage Java Example");
-        properties.addValue(PropertyNames.VERSION, "3.0.2");
+        properties.addValue(PropertyNames.TITLE, "GeoPackage Android Example");
+        properties.addValue(PropertyNames.VERSION, "3.2.0");
         properties.addValue(PropertyNames.CREATOR, "NGA");
         properties.addValue(PropertyNames.PUBLISHER, "NGA");
         properties.addValue(PropertyNames.CONTRIBUTOR, "Brian Osborn");
@@ -1631,20 +2073,203 @@ public class GeoPackageExample extends BaseTestCase {
         properties
                 .addValue(
                         PropertyNames.DESCRIPTION,
-                        "GeoPackage example created by http://github.com/ngageoint/geopackage-java/blob/master/src/test/java/mil/nga/geopackage/test/GeoPackageExample.java");
-        properties.addValue(PropertyNames.IDENTIFIER, "geopackage-java");
+                        "GeoPackage example created by https://github.com/ngageoint/geopackage-android/blob/master/geopackage-sdk/src/androidTest/java/mil/nga/geopackage/test/GeoPackageExample.java");
+        properties.addValue(PropertyNames.IDENTIFIER, "geopackage-android");
         properties.addValue(PropertyNames.LICENSE, "MIT");
         properties
                 .addValue(
                         PropertyNames.SOURCE,
-                        "http://github.com/ngageoint/GeoPackage/blob/master/docs/examples/java/example.gpkg");
+                        "http://github.com/ngageoint/GeoPackage/blob/master/docs/examples/android/example.gpkg");
         properties.addValue(PropertyNames.SUBJECT, "Examples");
         properties.addValue(PropertyNames.TYPE, "Examples");
         properties.addValue(PropertyNames.URI,
-                "http://github.com/ngageoint/geopackage-java");
+                "http://github.com/ngageoint/geopackage-android");
         properties.addValue(PropertyNames.TAG, "NGA");
         properties.addValue(PropertyNames.TAG, "Example");
         properties.addValue(PropertyNames.TAG, "BIT Systems");
+
+    }
+
+    private static void createContentsIdExtension(GeoPackage geoPackage) {
+
+        ContentsIdExtension contentsId = new ContentsIdExtension(geoPackage);
+        contentsId.createIds(ContentsDataType.FEATURES);
+
+    }
+
+    private static void createFeatureStyleExtension(GeoPackage geoPackage)
+            throws IOException, NameNotFoundException {
+
+        List<StyleRow> styles = new ArrayList<>();
+
+        StyleRow style1 = new StyleRow();
+        style1.setName("Green");
+        style1.setDescription("Green Style");
+        style1.setColor(ColorConstants.GREEN);
+        style1.setWidth(2.0);
+        styles.add(style1);
+
+        StyleRow style2 = new StyleRow();
+        style2.setName("Blue with Red Fill");
+        style2.setDescription("Blue with Red Fill Style");
+        style2.setColor(new Color(ColorConstants.BLUE));
+        style2.setFillColor(new Color(255, 0, 0, .4f));
+        styles.add(style2);
+
+        StyleRow style3 = new StyleRow();
+        style3.setName("Orange");
+        style3.setDescription("Orange Style");
+        style3.setColor(new Color(0xFFA500));
+        style3.setWidth(6.5);
+        styles.add(style3);
+
+        StyleRow style4 = new StyleRow();
+        style4.setName("Violet with Yellow Fill");
+        style4.setDescription("Violet with Yellow Fill Style");
+        style4.setColor(new Color(138, 43, 226));
+        style4.setWidth(4.1);
+        style4.setFillColor(new Color(new float[]{61, .89f, .72f}, .3f));
+        styles.add(style4);
+
+        List<IconRow> icons = new ArrayList<>();
+
+        TestUtils.copyAssetFileToInternalStorage(geoPackage.getContext(), TestUtils.getTestContext(geoPackage.getContext()), "building.png");
+        IconRow icon1 = new IconRow();
+        icon1.setName("Building");
+        icon1.setDescription("Building Icon");
+        icon1.setData(BitmapFactory.decodeFile(
+                TestUtils.getAssetFileInternalStorageLocation(geoPackage.getContext(), "building.png")),
+                Bitmap.CompressFormat.PNG);
+        icon1.setContentType("image/png");
+        icon1.setWidth(32.0);
+        icon1.setAnchorU(0.5);
+        icon1.setAnchorV(1.0);
+        icons.add(icon1);
+
+        TestUtils.copyAssetFileToInternalStorage(geoPackage.getContext(), TestUtils.getTestContext(geoPackage.getContext()), "college.png");
+        IconRow icon2 = new IconRow();
+        icon2.setName("College");
+        icon2.setDescription("College Icon");
+        icon2.setData(BitmapFactory.decodeFile(
+                TestUtils.getAssetFileInternalStorageLocation(geoPackage.getContext(), "college.png")),
+                Bitmap.CompressFormat.PNG);
+        icon2.setContentType("image/png");
+        icon2.setWidth(32.0);
+        icon2.setHeight(44.0);
+        icons.add(icon2);
+
+        TestUtils.copyAssetFileToInternalStorage(geoPackage.getContext(), TestUtils.getTestContext(geoPackage.getContext()), "tractor.png");
+        IconRow icon3 = new IconRow();
+        icon3.setName("Tractor");
+        icon3.setDescription("Tractor Icon");
+        icon3.setData(BitmapFactory.decodeFile(
+                TestUtils.getAssetFileInternalStorageLocation(geoPackage.getContext(), "tractor.png")),
+                Bitmap.CompressFormat.PNG);
+        icon3.setContentType("image/png");
+        icon3.setAnchorV(1.0);
+        icons.add(icon3);
+
+        createFeatureStylesGeometry1(geoPackage, styles, icons);
+        createFeatureStylesGeometry2(geoPackage, styles, icons);
+    }
+
+    private static void createFeatureStylesGeometry1(GeoPackage geoPackage,
+                                                     List<StyleRow> styles, List<IconRow> icons) throws IOException {
+
+        FeatureDao featureDao = geoPackage.getFeatureDao("geometry1");
+        FeatureTableStyles geometry1Styles = new FeatureTableStyles(geoPackage,
+                featureDao.getTable());
+
+        geometry1Styles.setTableStyleDefault(styles.get(0));
+        geometry1Styles.setTableStyle(GeometryType.POLYGON, styles.get(1));
+        geometry1Styles.setTableStyle(GeometryType.POINT, styles.get(2));
+
+        geometry1Styles.createStyleRelationship();
+        geometry1Styles.createIconRelationship();
+
+        int pointCount = 0;
+        int lineCount = 0;
+        int polygonCount = 0;
+
+        FeatureCursor features = featureDao.queryForAll();
+        while (features.moveToNext()) {
+            FeatureRow featureRow = features.getRow();
+            switch (featureRow.getGeometryType()) {
+                case POINT:
+                    pointCount++;
+                    switch (pointCount) {
+                        case 1:
+                            geometry1Styles.setIcon(featureRow, icons.get(0));
+                            break;
+                        case 2:
+                            geometry1Styles.setIcon(featureRow, icons.get(1));
+                            break;
+                        case 3:
+                            geometry1Styles.setIcon(featureRow, icons.get(2));
+                            break;
+                    }
+                    break;
+                case LINESTRING:
+                    lineCount++;
+                    switch (lineCount) {
+                        case 2:
+                            geometry1Styles.setStyle(featureRow, styles.get(1));
+                            break;
+                        case 3:
+                            geometry1Styles.setStyle(featureRow, styles.get(2));
+                            break;
+                    }
+                    break;
+                case POLYGON:
+                    polygonCount++;
+                    switch (polygonCount) {
+                        case 2:
+                            geometry1Styles.setStyle(featureRow, styles.get(3));
+                            break;
+                        case 3:
+                            geometry1Styles.setStyle(featureRow, styles.get(2));
+                            break;
+                    }
+                    break;
+                default:
+            }
+        }
+        features.close();
+
+    }
+
+    private static void createFeatureStylesGeometry2(GeoPackage geoPackage,
+                                                     List<StyleRow> styles, List<IconRow> icons) throws IOException {
+
+        FeatureDao featureDao = geoPackage.getFeatureDao("geometry2");
+        FeatureTableStyles geometry2Styles = new FeatureTableStyles(geoPackage,
+                featureDao.getTable());
+
+        geometry2Styles.setTableStyle(GeometryType.POINT, styles.get(0));
+        geometry2Styles.setTableStyle(GeometryType.LINESTRING, styles.get(1));
+        geometry2Styles.setTableStyle(GeometryType.POLYGON, styles.get(0));
+        geometry2Styles.setTableStyle(GeometryType.GEOMETRY, styles.get(2));
+
+        geometry2Styles.createStyleRelationship();
+        geometry2Styles.createIconRelationship();
+
+        FeatureCursor features = featureDao.queryForAll();
+        while (features.moveToNext()) {
+            FeatureRow featureRow = features.getRow();
+            switch (featureRow.getGeometryType()) {
+                case POINT:
+                    geometry2Styles.setIcon(featureRow, icons.get(0));
+                    break;
+                case LINESTRING:
+                    geometry2Styles.setStyle(featureRow, styles.get(0));
+                    break;
+                case POLYGON:
+                    geometry2Styles.setStyle(featureRow, styles.get(1));
+                    break;
+                default:
+            }
+        }
+        features.close();
 
     }
 

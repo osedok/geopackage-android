@@ -1,5 +1,7 @@
 package mil.nga.geopackage.test.attributes;
 
+import org.junit.Test;
+
 import java.sql.SQLException;
 
 import mil.nga.geopackage.test.ImportGeoPackageTestCase;
@@ -21,8 +23,9 @@ public class AttributesImportTest extends ImportGeoPackageTestCase {
     /**
      * Test reading
      *
-     * @throws SQLException
+     * @throws SQLException upon error
      */
+    @Test
     public void testRead() throws SQLException {
 
         AttributesUtils.testRead(geoPackage);
@@ -32,8 +35,9 @@ public class AttributesImportTest extends ImportGeoPackageTestCase {
     /**
      * Test updating
      *
-     * @throws SQLException
+     * @throws SQLException upon error
      */
+    @Test
     public void testUpdate() throws SQLException {
 
         AttributesUtils.testUpdate(geoPackage);
@@ -41,10 +45,23 @@ public class AttributesImportTest extends ImportGeoPackageTestCase {
     }
 
     /**
+     * Test updating with added columns
+     *
+     * @throws SQLException upon error
+     */
+    @Test
+    public void testUpdateAddColumns() throws SQLException {
+
+        AttributesUtils.testUpdateAddColumns(geoPackage);
+
+    }
+
+    /**
      * Test creating
      *
-     * @throws SQLException
+     * @throws SQLException upon error
      */
+    @Test
     public void testCreate() throws SQLException {
 
         AttributesUtils.testCreate(geoPackage);
@@ -54,8 +71,9 @@ public class AttributesImportTest extends ImportGeoPackageTestCase {
     /**
      * Test deleting
      *
-     * @throws SQLException
+     * @throws SQLException upon error
      */
+    @Test
     public void testDelete() throws SQLException {
 
         AttributesUtils.testDelete(geoPackage);

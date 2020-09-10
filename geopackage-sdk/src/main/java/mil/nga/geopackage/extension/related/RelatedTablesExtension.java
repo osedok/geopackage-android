@@ -4,20 +4,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 import mil.nga.geopackage.GeoPackage;
-import mil.nga.geopackage.GeoPackageException;
 import mil.nga.geopackage.db.GeoPackageConnection;
 import mil.nga.geopackage.extension.related.media.MediaDao;
 import mil.nga.geopackage.extension.related.media.MediaTable;
 import mil.nga.geopackage.extension.related.simple.SimpleAttributesDao;
 import mil.nga.geopackage.extension.related.simple.SimpleAttributesTable;
-import mil.nga.geopackage.user.custom.UserCustomColumn;
 import mil.nga.geopackage.user.custom.UserCustomCursor;
 import mil.nga.geopackage.user.custom.UserCustomDao;
-import mil.nga.geopackage.user.custom.UserCustomTable;
-import mil.nga.geopackage.user.custom.UserCustomTableReader;
 
 /**
  * Related Tables extension
+ *
+ * http://docs.opengeospatial.org/is/18-000/18-000.html
  *
  * @author osbornb
  * @since 3.0.1
@@ -45,21 +43,6 @@ public class RelatedTablesExtension extends RelatedTablesCoreExtension {
     @Override
     public GeoPackage getGeoPackage() {
         return (GeoPackage) super.getGeoPackage();
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public String getPrimaryKeyColumnName(String tableName) {
-        UserCustomTable table = UserCustomTableReader.readTable(connection,
-                tableName);
-        UserCustomColumn pkColumn = table.getPkColumn();
-        if (pkColumn == null) {
-            throw new GeoPackageException("Found no primary key for table "
-                    + tableName);
-        }
-        return pkColumn.getName();
     }
 
     /**
@@ -239,6 +222,28 @@ public class RelatedTablesExtension extends RelatedTablesCoreExtension {
         }
 
         return baseIds;
+    }
+
+    /**
+     * Determine if the base id and related id mapping exists
+     *
+     * @param tableName mapping table name
+     * @param baseId    base id
+     * @param relatedId related id
+     * @return true if mapping exists
+     * @since 3.2.0
+     */
+    public boolean hasMapping(String tableName, long baseId, long relatedId) {
+        boolean has = false;
+        UserMappingDao userMappingDao = getMappingDao(tableName);
+        UserCustomCursor cursor = userMappingDao.queryByIds(baseId,
+                relatedId);
+        try {
+            has = cursor.getCount() > 0;
+        } finally {
+            cursor.close();
+        }
+        return has;
     }
 
 }

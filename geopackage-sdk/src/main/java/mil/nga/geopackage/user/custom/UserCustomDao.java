@@ -6,8 +6,9 @@ import mil.nga.geopackage.BoundingBox;
 import mil.nga.geopackage.GeoPackage;
 import mil.nga.geopackage.GeoPackageException;
 import mil.nga.geopackage.db.GeoPackageConnection;
-import mil.nga.geopackage.factory.GeoPackageCursorWrapper;
+import mil.nga.geopackage.db.GeoPackageCursorWrapper;
 import mil.nga.geopackage.user.UserDao;
+import mil.nga.sf.proj.Projection;
 
 /**
  * User Custom DAO for reading user custom data tables
@@ -29,14 +30,13 @@ public class UserCustomDao
      *
      * @param database database name
      * @param db       database connection
-     * @param userDb   user connection
      * @param table    user custom table
      */
     public UserCustomDao(String database, GeoPackageConnection db,
-                         UserCustomConnection userDb, UserCustomTable table) {
-        super(database, db, userDb, table);
+                         UserCustomTable table) {
+        super(database, db, new UserCustomConnection(db), table);
 
-        this.userDb = userDb;
+        this.userDb = (UserCustomConnection) getUserDb();
     }
 
     /**
@@ -55,7 +55,7 @@ public class UserCustomDao
      * @param userCustomTable user custom table
      */
     public UserCustomDao(UserCustomDao dao, UserCustomTable userCustomTable) {
-        this(dao.getDatabase(), dao.getDb(), dao.getUserDb(), userCustomTable);
+        this(dao.getDatabase(), dao.getDb(), userCustomTable);
     }
 
     /**
@@ -63,6 +63,15 @@ public class UserCustomDao
      */
     @Override
     public BoundingBox getBoundingBox() {
+        throw new GeoPackageException(
+                "Bounding Box not supported for User Custom");
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public BoundingBox getBoundingBox(Projection projection) {
         throw new GeoPackageException(
                 "Bounding Box not supported for User Custom");
     }
@@ -123,10 +132,9 @@ public class UserCustomDao
      */
     public static UserCustomDao readTable(GeoPackage geoPackage, String tableName) {
 
-        UserCustomConnection userDb = new UserCustomConnection(geoPackage.getConnection());
-        final UserCustomTable userCustomTable = UserCustomTableReader.readTable(
+        UserCustomTable userCustomTable = UserCustomTableReader.readTable(
                 geoPackage.getConnection(), tableName);
-        UserCustomDao dao = new UserCustomDao(geoPackage.getName(), geoPackage.getConnection(), userDb,
+        UserCustomDao dao = new UserCustomDao(geoPackage.getName(), geoPackage.getConnection(),
                 userCustomTable);
 
         dao.registerCursorWrapper(geoPackage);

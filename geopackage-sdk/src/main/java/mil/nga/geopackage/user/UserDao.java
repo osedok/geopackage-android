@@ -2,8 +2,10 @@ package mil.nga.geopackage.user;
 
 import android.content.ContentValues;
 
+import mil.nga.geopackage.db.AlterTable;
 import mil.nga.geopackage.db.GeoPackageConnection;
 import mil.nga.geopackage.db.GeoPackageDatabase;
+import mil.nga.geopackage.db.TableMapping;
 
 /**
  * Abstract User DAO for reading user tables
@@ -43,9 +45,10 @@ public abstract class UserDao<TColumn extends UserColumn, TTable extends UserTab
     protected UserDao(String database, GeoPackageConnection db,
                       UserConnection<TColumn, TTable, TRow, TResult> userDb,
                       TTable table) {
-        super(database, db, userDb, table);
-        this.db = db.getDb();
+        super(database, db.copy(userDb.getDatabase()), userDb, table);
+        this.db = userDb.getDatabase();
         this.userDb = userDb;
+        userDb.setTable(table);
     }
 
     /**
@@ -64,6 +67,17 @@ public abstract class UserDao<TColumn extends UserColumn, TTable extends UserTab
      */
     public GeoPackageDatabase getDatabaseConnection() {
         return db;
+    }
+
+    /**
+     * Set the active SQLite connection as the bindings or standard
+     *
+     * @param useBindings true to use bindings connection, false for standard
+     * @return previous bindings value
+     * @since 3.4.0
+     */
+    public boolean setUseBindings(boolean useBindings) {
+        return db.setUseBindings(useBindings);
     }
 
     /**
@@ -97,6 +111,38 @@ public abstract class UserDao<TColumn extends UserColumn, TTable extends UserTab
             result.enableInvalidRequery(this);
         }
         return result;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void beginTransaction() {
+        db.beginTransaction();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void endTransaction(boolean successful) {
+        db.endTransaction(successful);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void commit() {
+        endAndBeginTransaction();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public boolean inTransaction() {
+        return db.inTransaction();
     }
 
     /**
@@ -173,7 +219,7 @@ public abstract class UserDao<TColumn extends UserColumn, TTable extends UserTab
     public long insert(TRow row) {
         long id = db.insertOrThrow(getTableName(), null, row.toContentValues());
         if (row.hasIdColumn()) {
-            row.setId(id);
+            row.setId(id, true);
         }
         return id;
     }
@@ -196,6 +242,24 @@ public abstract class UserDao<TColumn extends UserColumn, TTable extends UserTab
      */
     public long insertOrThrow(ContentValues values) {
         return db.insertOrThrow(getTableName(), null, values);
+    }
+
+    /**
+     * {@inheritDoc}
+     * Alter Table in SQLite does not support renaming columns until version 3.25.0
+     * Once Android supports column rename alter table statements, this method override can be removed.
+     */
+    @Override
+    protected void renameTableColumn(String columnName, String newColumnName) {
+
+        UserTable<? extends UserColumn> newTable = getTable().copy();
+
+        newTable.renameColumn(columnName, newColumnName);
+
+        TableMapping tableMapping = new TableMapping(newTable);
+        tableMapping.getColumn(newColumnName).setFromColumn(columnName);
+
+        AlterTable.alterTable(getDb(), newTable, tableMapping);
     }
 
 }

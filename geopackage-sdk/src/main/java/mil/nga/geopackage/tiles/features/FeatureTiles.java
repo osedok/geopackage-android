@@ -1,26 +1,42 @@
 package mil.nga.geopackage.tiles.features;
 
+import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.CompressFormat;
 import android.graphics.Paint;
+import android.graphics.Paint.Style;
 import android.util.Log;
 
-import org.osgeo.proj4j.units.Units;
+import org.locationtech.proj4j.units.Units;
 
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import mil.nga.geopackage.BoundingBox;
+import mil.nga.geopackage.GeoPackage;
+import mil.nga.geopackage.GeoPackageException;
 import mil.nga.geopackage.R;
+import mil.nga.geopackage.extension.nga.style.FeatureStyle;
+import mil.nga.geopackage.extension.nga.style.FeatureTableStyles;
+import mil.nga.geopackage.extension.nga.style.IconCache;
+import mil.nga.geopackage.extension.nga.style.IconDao;
+import mil.nga.geopackage.extension.nga.style.IconRow;
+import mil.nga.geopackage.extension.nga.style.StyleDao;
+import mil.nga.geopackage.extension.nga.style.StyleRow;
 import mil.nga.geopackage.features.index.FeatureIndexManager;
 import mil.nga.geopackage.features.index.FeatureIndexResults;
 import mil.nga.geopackage.features.user.FeatureCursor;
 import mil.nga.geopackage.features.user.FeatureDao;
 import mil.nga.geopackage.features.user.FeatureRow;
 import mil.nga.geopackage.io.BitmapConverter;
+import mil.nga.geopackage.style.Color;
 import mil.nga.geopackage.tiles.TileBoundingBoxUtils;
+import mil.nga.geopackage.tiles.TileUtils;
+import mil.nga.sf.GeometryType;
 import mil.nga.sf.Point;
 import mil.nga.sf.proj.Projection;
 import mil.nga.sf.proj.ProjectionConstants;
@@ -69,7 +85,12 @@ public abstract class FeatureTiles {
     protected FeatureIndexManager indexManager;
 
     /**
-     * Tile height
+     * Feature Style extension
+     */
+    protected FeatureTableStyles featureTableStyles;
+
+    /**
+     * Tile width
      */
     protected int tileWidth;
 
@@ -77,6 +98,11 @@ public abstract class FeatureTiles {
      * Tile height
      */
     protected int tileHeight;
+
+    /**
+     * Empty transparent image for testing
+     */
+    private Bitmap emptyImage;
 
     /**
      * Compress format
@@ -104,9 +130,19 @@ public abstract class FeatureTiles {
     protected Paint linePaint = new Paint();
 
     /**
+     * Line stroke width
+     */
+    protected float lineStrokeWidth;
+
+    /**
      * Polygon paint
      */
     protected Paint polygonPaint = new Paint();
+
+    /**
+     * Polygon stroke width
+     */
+    protected float polygonStrokeWidth;
 
     /**
      * Fill polygon flag
@@ -117,6 +153,16 @@ public abstract class FeatureTiles {
      * Polygon fill paint
      */
     protected Paint polygonFillPaint = new Paint();
+
+    /**
+     * Feature paint cache
+     */
+    private FeaturePaintCache featurePaintCache = new FeaturePaintCache();
+
+    /**
+     * Icon Cache
+     */
+    private IconCache iconCache = new IconCache();
 
     /**
      * Height overlapping pixels between tile images
@@ -149,21 +195,109 @@ public abstract class FeatureTiles {
     protected boolean simplifyGeometries = true;
 
     /**
+     * Tile density based upon the device-independent pixels {@link TileUtils#TILE_DP}
+     */
+    protected float density = 1.0f;
+
+    /**
      * Constructor
      *
      * @param context    context
      * @param featureDao feature dao
      */
     public FeatureTiles(Context context, FeatureDao featureDao) {
+        this(context, null, featureDao);
+    }
+
+    /**
+     * Constructor
+     *
+     * @param context    context
+     * @param featureDao feature dao
+     * @param density    display density: {@link android.util.DisplayMetrics#density}
+     * @since 3.2.0
+     */
+    public FeatureTiles(Context context, FeatureDao featureDao, float density) {
+        this(context, null, featureDao, density);
+    }
+
+    /**
+     * Constructor
+     *
+     * @param context    context
+     * @param featureDao feature dao
+     * @param width      drawn tile width
+     * @param height     drawn tile height
+     * @since 3.2.0
+     */
+    public FeatureTiles(Context context, FeatureDao featureDao, int width, int height) {
+        this(context, null, featureDao, width, height);
+    }
+
+    /**
+     * Constructor, auto creates the index manager for indexed tables and feature styles for styled tables
+     *
+     * @param context    context
+     * @param geoPackage GeoPackage
+     * @param featureDao feature dao
+     * @since 3.2.0
+     */
+    public FeatureTiles(Context context, GeoPackage geoPackage, FeatureDao featureDao) {
+        this(context, geoPackage, featureDao, TileUtils.TILE_PIXELS_HIGH, TileUtils.TILE_PIXELS_HIGH);
+    }
+
+    /**
+     * Constructor, auto creates the index manager for indexed tables and feature styles for styled tables
+     *
+     * @param context    context
+     * @param geoPackage GeoPackage
+     * @param featureDao feature dao
+     * @param density    display density: {@link android.util.DisplayMetrics#density}
+     * @since 3.2.0
+     */
+    public FeatureTiles(Context context, GeoPackage geoPackage, FeatureDao featureDao, float density) {
+        this(context, geoPackage, featureDao, density, TileUtils.tileLength(density), TileUtils.tileLength(density));
+    }
+
+    /**
+     * Constructor, auto creates the index manager for indexed tables and feature styles for styled tables
+     *
+     * @param context    context
+     * @param geoPackage GeoPackage
+     * @param featureDao feature dao
+     * @param width      drawn tile width
+     * @param height     drawn tile height
+     * @since 3.2.0
+     */
+    public FeatureTiles(Context context, GeoPackage geoPackage, FeatureDao featureDao, int width, int height) {
+        this(context, geoPackage, featureDao, TileUtils.density(width, height), width, height);
+    }
+
+    /**
+     * Constructor, auto creates the index manager for indexed tables and feature styles for styled tables
+     *
+     * @param context    context
+     * @param geoPackage GeoPackage
+     * @param featureDao feature dao
+     * @param density    display density: {@link android.util.DisplayMetrics#density}
+     * @param width      drawn tile width
+     * @param height     drawn tile height
+     * @since 3.2.0
+     */
+    public FeatureTiles(Context context, GeoPackage geoPackage, FeatureDao featureDao, float density, int width, int height) {
+
         this.context = context;
         this.featureDao = featureDao;
         if (featureDao != null) {
             this.projection = featureDao.getProjection();
         }
 
-        Resources resources = context.getResources();
-        tileWidth = resources.getInteger(R.integer.feature_tiles_width);
-        tileHeight = resources.getInteger(R.integer.feature_tiles_height);
+        this.density = TileUtils.tileDensity(density, width, height);
+
+        tileWidth = width;
+        tileHeight = height;
+
+        createEmptyImage();
 
         compressFormat = CompressFormat.valueOf(context.getString(R.string.feature_tiles_compress_format));
 
@@ -171,17 +305,35 @@ public abstract class FeatureTiles {
         pointRadius = Float.valueOf(context.getString(R.string.feature_tiles_point_radius));
 
         linePaint.setAntiAlias(true);
-        linePaint.setStrokeWidth(Float.valueOf(context.getString(R.string.feature_tiles_line_stroke_width)));
-        linePaint.setStyle(Paint.Style.STROKE);
+        lineStrokeWidth = Float.valueOf(context.getString(R.string.feature_tiles_line_stroke_width));
+        linePaint.setStrokeWidth(this.density * lineStrokeWidth);
+        linePaint.setStyle(Style.STROKE);
 
         polygonPaint.setAntiAlias(true);
-        polygonPaint.setStrokeWidth(Float.valueOf(context.getString(R.string.feature_tiles_polygon_stroke_width)));
-        polygonPaint.setStyle(Paint.Style.STROKE);
+        polygonStrokeWidth = Float.valueOf(context.getString(R.string.feature_tiles_polygon_stroke_width));
+        polygonPaint.setStrokeWidth(this.density * polygonStrokeWidth);
+        polygonPaint.setStyle(Style.STROKE);
 
+        Resources resources = context.getResources();
         fillPolygon = resources.getBoolean(R.bool.feature_tiles_polygon_fill);
         polygonFillPaint.setAntiAlias(true);
-        polygonFillPaint.setStyle(Paint.Style.FILL_AND_STROKE);
+        polygonFillPaint.setStyle(Style.FILL);
         polygonFillPaint.setAlpha(resources.getInteger(R.integer.feature_tiles_polygon_fill_alpha));
+
+        if (geoPackage != null) {
+
+            indexManager = new FeatureIndexManager(context, geoPackage, featureDao);
+            if (!indexManager.isIndexed()) {
+                indexManager.close();
+                indexManager = null;
+            }
+
+            featureTableStyles = new FeatureTableStyles(geoPackage, featureDao.getTable());
+            if (!featureTableStyles.has()) {
+                featureTableStyles = null;
+            }
+
+        }
 
         calculateDrawOverlap();
     }
@@ -195,6 +347,7 @@ public abstract class FeatureTiles {
         if (indexManager != null) {
             indexManager.close();
         }
+        emptyImage.recycle();
     }
 
     /**
@@ -202,21 +355,90 @@ public abstract class FeatureTiles {
      * Determines the pixel overlap between tiles
      */
     public void calculateDrawOverlap() {
+
         if (pointIcon != null) {
-            heightOverlap = pointIcon.getHeight();
-            widthOverlap = pointIcon.getWidth();
+            heightOverlap = this.density * pointIcon.getHeight();
+            widthOverlap = this.density * pointIcon.getWidth();
         } else {
-            heightOverlap = pointRadius;
-            widthOverlap = pointRadius;
+            heightOverlap = this.density * pointRadius;
+            widthOverlap = this.density * pointRadius;
         }
 
-        float linePaintHalfStroke = linePaint.getStrokeWidth() / 2.0f;
+        float linePaintHalfStroke = this.density * lineStrokeWidth / 2.0f;
         heightOverlap = Math.max(heightOverlap, linePaintHalfStroke);
         widthOverlap = Math.max(widthOverlap, linePaintHalfStroke);
 
-        float polygonPaintHalfStroke = polygonPaint.getStrokeWidth() / 2.0f;
+        float polygonPaintHalfStroke = this.density * polygonStrokeWidth / 2.0f;
         heightOverlap = Math.max(heightOverlap, polygonPaintHalfStroke);
         widthOverlap = Math.max(widthOverlap, polygonPaintHalfStroke);
+
+        if (featureTableStyles != null && featureTableStyles.has()) {
+
+            // Style Rows
+            Set<Long> styleRowIds = new HashSet<>();
+            List<Long> tableStyleIds = featureTableStyles.getAllTableStyleIds();
+            if (tableStyleIds != null) {
+                styleRowIds.addAll(tableStyleIds);
+            }
+            List<Long> styleIds = featureTableStyles.getAllStyleIds();
+            if (styleIds != null) {
+                styleRowIds.addAll(styleIds);
+            }
+
+            StyleDao styleDao = featureTableStyles.getStyleDao();
+            for (long styleRowId : styleRowIds) {
+                StyleRow styleRow = styleDao.getRow(styleDao.queryForIdRow(styleRowId));
+                float styleHalfWidth = this.density * (float) (styleRow.getWidthOrDefault() / 2.0f);
+                widthOverlap = Math.max(widthOverlap, styleHalfWidth);
+                heightOverlap = Math.max(heightOverlap, styleHalfWidth);
+            }
+
+            // Icon Rows
+            Set<Long> iconRowIds = new HashSet<>();
+            List<Long> tableIconIds = featureTableStyles.getAllTableIconIds();
+            if (tableIconIds != null) {
+                iconRowIds.addAll(tableIconIds);
+            }
+            List<Long> iconIds = featureTableStyles.getAllIconIds();
+            if (iconIds != null) {
+                iconRowIds.addAll(iconIds);
+            }
+
+            IconDao iconDao = featureTableStyles.getIconDao();
+            for (long iconRowId : iconRowIds) {
+                IconRow iconRow = iconDao.getRow(iconDao.queryForIdRow(iconRowId));
+                double[] iconDimensions = iconRow.getDerivedDimensions();
+                float iconWidth = this.density * (float) Math.ceil(iconDimensions[0]);
+                float iconHeight = this.density * (float) Math.ceil(iconDimensions[1]);
+                widthOverlap = Math.max(widthOverlap, iconWidth);
+                heightOverlap = Math.max(heightOverlap, iconHeight);
+            }
+
+        }
+
+    }
+
+    /**
+     * Set the density
+     *
+     * @param density density
+     * @since 3.2.0
+     */
+    public void setDensity(float density) {
+        this.density = density;
+        linePaint.setStrokeWidth(this.density * lineStrokeWidth);
+        polygonPaint.setStrokeWidth(this.density * polygonStrokeWidth);
+        featurePaintCache.clear();
+    }
+
+    /**
+     * Get the density
+     *
+     * @return density
+     * @since 3.2.0
+     */
+    public float getDensity() {
+        return density;
     }
 
     /**
@@ -304,6 +526,86 @@ public abstract class FeatureTiles {
     }
 
     /**
+     * Get the feature table styles
+     *
+     * @return feature table styles
+     * @since 3.2.0
+     */
+    public FeatureTableStyles getFeatureTableStyles() {
+        return featureTableStyles;
+    }
+
+    /**
+     * Set the feature table styles
+     *
+     * @param featureTableStyles feature table styles
+     * @since 3.2.0
+     */
+    public void setFeatureTableStyles(FeatureTableStyles featureTableStyles) {
+        this.featureTableStyles = featureTableStyles;
+    }
+
+    /**
+     * Ignore the feature table styles within the GeoPackage
+     *
+     * @since 3.2.0
+     */
+    public void ignoreFeatureTableStyles() {
+        setFeatureTableStyles(null);
+        calculateDrawOverlap();
+    }
+
+    /**
+     * Clear all caches
+     *
+     * @since 3.3.0
+     */
+    public void clearCache() {
+        clearStylePaintCache();
+        clearIconCache();
+    }
+
+    /**
+     * Clear the style paint cache
+     *
+     * @since 3.2.0
+     */
+    public void clearStylePaintCache() {
+        featurePaintCache.clear();
+    }
+
+    /**
+     * Set / resize the style paint cache size
+     *
+     * @param size new size
+     * @since 3.2.0
+     */
+    @TargetApi(21)
+    public void setStylePaintCacheSize(int size) {
+        featurePaintCache.resize(size);
+    }
+
+    /**
+     * Clear the icon cache
+     *
+     * @since 3.2.0
+     */
+    public void clearIconCache() {
+        iconCache.clear();
+    }
+
+    /**
+     * Set / resize the icon cache size
+     *
+     * @param size new size
+     * @since 3.2.0
+     */
+    @TargetApi(21)
+    public void setIconCacheSize(int size) {
+        iconCache.resize(size);
+    }
+
+    /**
      * Get the tile width
      *
      * @return tile width
@@ -319,6 +621,7 @@ public abstract class FeatureTiles {
      */
     public void setTileWidth(int tileWidth) {
         this.tileWidth = tileWidth;
+        createEmptyImage();
     }
 
     /**
@@ -337,6 +640,7 @@ public abstract class FeatureTiles {
      */
     public void setTileHeight(int tileHeight) {
         this.tileHeight = tileHeight;
+        createEmptyImage();
     }
 
     /**
@@ -390,6 +694,9 @@ public abstract class FeatureTiles {
      * @param pointPaint point paint
      */
     public void setPointPaint(Paint pointPaint) {
+        if (pointPaint == null) {
+            throw new AssertionError("Point Paint can not be null");
+        }
         this.pointPaint = pointPaint;
     }
 
@@ -412,12 +719,13 @@ public abstract class FeatureTiles {
     }
 
     /**
-     * Get the line paint
+     * Get a copy of the line paint, must call {@link #setLinePaint(Paint)} to update the paint
      *
      * @return line paint
+     * @since 3.2.0
      */
-    public Paint getLinePaint() {
-        return linePaint;
+    public Paint getLinePaintCopy() {
+        return new Paint(linePaint);
     }
 
     /**
@@ -426,16 +734,82 @@ public abstract class FeatureTiles {
      * @param linePaint line paint
      */
     public void setLinePaint(Paint linePaint) {
+        if (linePaint == null) {
+            throw new AssertionError("Line Paint can not be null");
+        }
         this.linePaint = linePaint;
+        setLineStrokeWidth(linePaint.getStrokeWidth());
     }
 
     /**
-     * Get the polygon paint
+     * Get line stroke width
+     *
+     * @return width
+     * @since 3.2.0
+     */
+    public float getLineStrokeWidth() {
+        return lineStrokeWidth;
+    }
+
+    /**
+     * Set line stroke width
+     *
+     * @param lineStrokeWidth line stroke width
+     * @since 3.2.0
+     */
+    public void setLineStrokeWidth(float lineStrokeWidth) {
+        this.lineStrokeWidth = lineStrokeWidth;
+        linePaint.setStrokeWidth(this.density * lineStrokeWidth);
+    }
+
+    /**
+     * Get line color
+     *
+     * @return color
+     * @since 3.2.0
+     */
+    public int getLineColor() {
+        return linePaint.getColor();
+    }
+
+    /**
+     * Set line color
+     *
+     * @param lineColor line color
+     * @since 3.2.0
+     */
+    public void setLineColor(int lineColor) {
+        linePaint.setColor(lineColor);
+    }
+
+    /**
+     * Get line alpha
+     *
+     * @return alpha
+     * @since 3.2.0
+     */
+    public int getLineAlpha() {
+        return linePaint.getAlpha();
+    }
+
+    /**
+     * Set line alpha
+     *
+     * @param lineAlpha line alpha
+     * @since 3.2.0
+     */
+    public void setLineAlpha(int lineAlpha) {
+        linePaint.setAlpha(lineAlpha);
+    }
+
+    /**
+     * Get a copy of the polygon paint, must call {@link #setPolygonPaint(Paint)} to update the paint
      *
      * @return polygon paint
+     * @since 3.2.0
      */
-    public Paint getPolygonPaint() {
-        return polygonPaint;
+    public Paint getPolygonPaintCopy() {
+        return new Paint(polygonPaint);
     }
 
     /**
@@ -444,7 +818,72 @@ public abstract class FeatureTiles {
      * @param polygonPaint polygon paint
      */
     public void setPolygonPaint(Paint polygonPaint) {
+        if (polygonPaint == null) {
+            throw new AssertionError("Polygon Paint can not be null");
+        }
         this.polygonPaint = polygonPaint;
+        setPolygonStrokeWidth(polygonPaint.getStrokeWidth());
+    }
+
+    /**
+     * Get polygon stroke width
+     *
+     * @return width
+     * @since 3.2.0
+     */
+    public float getPolygonStrokeWidth() {
+        return polygonStrokeWidth;
+    }
+
+    /**
+     * Set polygon stroke width
+     *
+     * @param polygonStrokeWidth polygon stroke width
+     * @since 3.2.0
+     */
+    public void setPolygonStrokeWidth(float polygonStrokeWidth) {
+        this.polygonStrokeWidth = polygonStrokeWidth;
+        polygonPaint.setStrokeWidth(this.density * polygonStrokeWidth);
+    }
+
+    /**
+     * Get polygon color
+     *
+     * @return color
+     * @since 3.2.0
+     */
+    public int getPolygonColor() {
+        return polygonPaint.getColor();
+    }
+
+    /**
+     * Set polygon color
+     *
+     * @param polygonColor polygon color
+     * @since 3.2.0
+     */
+    public void setPolygonColor(int polygonColor) {
+        polygonPaint.setColor(polygonColor);
+    }
+
+    /**
+     * Get polygon alpha
+     *
+     * @return alpha
+     * @since 3.2.0
+     */
+    public int getPolygonAlpha() {
+        return polygonPaint.getAlpha();
+    }
+
+    /**
+     * Set polygon alpha
+     *
+     * @param polygonAlpha polygon alpha
+     * @since 3.2.0
+     */
+    public void setPolygonAlpha(int polygonAlpha) {
+        polygonPaint.setAlpha(polygonAlpha);
     }
 
     /**
@@ -469,9 +908,10 @@ public abstract class FeatureTiles {
      * Get the polygon fill paint
      *
      * @return polygon fill paint
+     * @since 3.2.0
      */
-    public Paint getPolygonFillPaint() {
-        return polygonFillPaint;
+    public Paint getPolygonFillPaintCopy() {
+        return new Paint(polygonFillPaint);
     }
 
     /**
@@ -480,7 +920,50 @@ public abstract class FeatureTiles {
      * @param polygonFillPaint polygon fill paint
      */
     public void setPolygonFillPaint(Paint polygonFillPaint) {
+        if (polygonFillPaint == null) {
+            throw new AssertionError("Polygon Fill Paint can not be null");
+        }
         this.polygonFillPaint = polygonFillPaint;
+    }
+
+    /**
+     * Get polygon fill color
+     *
+     * @return color
+     * @since 3.2.0
+     */
+    public int getPolygonFillColor() {
+        return polygonFillPaint.getColor();
+    }
+
+    /**
+     * Set polygon fill color
+     *
+     * @param polygonFillColor polygon fill color
+     * @since 3.2.0
+     */
+    public void setPolygonFillColor(int polygonFillColor) {
+        polygonFillPaint.setColor(polygonFillColor);
+    }
+
+    /**
+     * Get polygon fill alpha
+     *
+     * @return alpha
+     * @since 3.2.0
+     */
+    public int getPolygonFillAlpha() {
+        return polygonFillPaint.getAlpha();
+    }
+
+    /**
+     * Set polygon fill alpha
+     *
+     * @param polygonFillAlpha polygon fill alpha
+     * @since 3.2.0
+     */
+    public void setPolygonFillAlpha(int polygonFillAlpha) {
+        polygonFillPaint.setAlpha(polygonFillAlpha);
     }
 
     /**
@@ -644,7 +1127,7 @@ public abstract class FeatureTiles {
     }
 
     /**
-     * Draw a tile bitmap from the x, y, and zoom level by querying features in the tile location
+     * Query for feature result count in the x, y, and zoom
      *
      * @param x    x coordinate
      * @param y    y coordinate
@@ -657,6 +1140,21 @@ public abstract class FeatureTiles {
         // Get the web mercator bounding box
         BoundingBox webMercatorBoundingBox = TileBoundingBoxUtils
                 .getWebMercatorBoundingBox(x, y, zoom);
+
+        // Query for the count of geometries matching the bounds in the index
+        long count = queryIndexedFeaturesCount(webMercatorBoundingBox);
+
+        return count;
+    }
+
+    /**
+     * Query for feature result count in the bounding box
+     *
+     * @param webMercatorBoundingBox web mercator bounding box
+     * @return feature count
+     * @since 3.2.0
+     */
+    public long queryIndexedFeaturesCount(BoundingBox webMercatorBoundingBox) {
 
         // Query for geometries matching the bounds in the index
         FeatureIndexResults results = queryIndexedFeatures(webMercatorBoundingBox);
@@ -674,6 +1172,25 @@ public abstract class FeatureTiles {
 
     /**
      * Query for feature results in the x, y, and zoom level by querying features in the tile location
+     *
+     * @param x    x coordinate
+     * @param y    y coordinate
+     * @param zoom zoom level
+     * @return feature index results
+     * @since 3.2.0
+     */
+    public FeatureIndexResults queryIndexedFeatures(int x, int y, int zoom) {
+
+        // Get the web mercator bounding box
+        BoundingBox webMercatorBoundingBox = TileBoundingBoxUtils
+                .getWebMercatorBoundingBox(x, y, zoom);
+
+        // Query for the geometries matching the bounds in the index
+        return queryIndexedFeatures(webMercatorBoundingBox);
+    }
+
+    /**
+     * Query for feature results in the bounding box
      *
      * @param webMercatorBoundingBox web mercator bounding box
      * @return feature index results
@@ -695,25 +1212,82 @@ public abstract class FeatureTiles {
      * Create an expanded bounding box to handle features outside the tile that
      * overlap
      *
+     * @param boundingBox bounding box
+     * @param projection  bounding box projection
+     * @return bounding box
+     * @since 3.2.0
+     */
+    public BoundingBox expandBoundingBox(BoundingBox boundingBox,
+                                         Projection projection) {
+
+        BoundingBox expandedBoundingBox = boundingBox;
+
+        ProjectionTransform toWebMercator = projection
+                .getTransformation(ProjectionConstants.EPSG_WEB_MERCATOR);
+        if (!toWebMercator.isSameProjection()) {
+            expandedBoundingBox = expandedBoundingBox.transform(toWebMercator);
+        }
+
+        expandedBoundingBox = expandBoundingBox(expandedBoundingBox);
+
+        if (!toWebMercator.isSameProjection()) {
+            ProjectionTransform fromWebMercator = toWebMercator
+                    .getInverseTransformation();
+            expandedBoundingBox = expandedBoundingBox
+                    .transform(fromWebMercator);
+        }
+
+        return expandedBoundingBox;
+    }
+
+    /**
+     * Create an expanded bounding box to handle features outside the tile that
+     * overlap
+     *
      * @param webMercatorBoundingBox web mercator bounding box
      * @return bounding box
+     * @since 3.2.0
      */
-    protected BoundingBox expandBoundingBox(BoundingBox webMercatorBoundingBox) {
+    public BoundingBox expandBoundingBox(BoundingBox webMercatorBoundingBox) {
+        return expandBoundingBox(webMercatorBoundingBox, webMercatorBoundingBox);
+    }
+
+    /**
+     * Create an expanded bounding box to handle features outside the tile that
+     * overlap
+     *
+     * @param webMercatorBoundingBox     web mercator bounding box
+     * @param tileWebMercatorBoundingBox tile web mercator bounding box
+     * @return bounding box
+     * @since 3.2.0
+     */
+    public BoundingBox expandBoundingBox(BoundingBox webMercatorBoundingBox, BoundingBox tileWebMercatorBoundingBox) {
 
         // Create an expanded bounding box to handle features outside the tile
         // that overlap
         double minLongitude = TileBoundingBoxUtils.getLongitudeFromPixel(
-                tileWidth, webMercatorBoundingBox, 0 - widthOverlap);
+                tileWidth, webMercatorBoundingBox, tileWebMercatorBoundingBox, 0 - widthOverlap);
         double maxLongitude = TileBoundingBoxUtils.getLongitudeFromPixel(
-                tileWidth, webMercatorBoundingBox, tileWidth + widthOverlap);
+                tileWidth, webMercatorBoundingBox, tileWebMercatorBoundingBox, tileWidth + widthOverlap);
         double maxLatitude = TileBoundingBoxUtils.getLatitudeFromPixel(
-                tileHeight, webMercatorBoundingBox, 0 - heightOverlap);
+                tileHeight, webMercatorBoundingBox, tileWebMercatorBoundingBox, 0 - heightOverlap);
         double minLatitude = TileBoundingBoxUtils.getLatitudeFromPixel(
-                tileHeight, webMercatorBoundingBox, tileHeight + heightOverlap);
-        BoundingBox expandedQueryBoundingBox = new BoundingBox(minLongitude,
+                tileHeight, webMercatorBoundingBox, tileWebMercatorBoundingBox, tileHeight + heightOverlap);
+
+        // Choose the most expanded longitudes and latitudes
+        minLongitude = Math.min(minLongitude, webMercatorBoundingBox.getMinLongitude());
+        maxLongitude = Math.max(maxLongitude, webMercatorBoundingBox.getMaxLongitude());
+        minLatitude = Math.min(minLatitude, webMercatorBoundingBox.getMinLatitude());
+        maxLatitude = Math.max(maxLatitude, webMercatorBoundingBox.getMaxLatitude());
+
+        BoundingBox expandedBoundingBox = new BoundingBox(minLongitude,
                 minLatitude, maxLongitude, maxLatitude);
 
-        return expandedQueryBoundingBox;
+        // Bound with the web mercator limits
+        expandedBoundingBox = TileBoundingBoxUtils
+                .boundWebMercatorBoundingBox(expandedBoundingBox);
+
+        return expandedBoundingBox;
     }
 
     /**
@@ -806,7 +1380,7 @@ public abstract class FeatureTiles {
         if (simplifyGeometries) {
 
             // Reproject to web mercator if not in meters
-            if (projection != null && projection.getUnit() != Units.METRES) {
+            if (projection != null && !projection.isUnit(Units.METRES)) {
                 ProjectionTransform toWebMercator = projection
                         .getTransformation(WEB_MERCATOR_PROJECTION);
                 points = toWebMercator.transform(points);
@@ -817,7 +1391,7 @@ public abstract class FeatureTiles {
                     simplifyTolerance);
 
             // Reproject back to the original projection
-            if (projection != null && projection.getUnit() != Units.METRES) {
+            if (projection != null && !projection.isUnit(Units.METRES)) {
                 ProjectionTransform fromWebMercator = WEB_MERCATOR_PROJECTION
                         .getTransformation(projection);
                 simplifiedPoints = fromWebMercator.transform(simplifiedPoints);
@@ -827,6 +1401,249 @@ public abstract class FeatureTiles {
         }
 
         return simplifiedPoints;
+    }
+
+    /**
+     * Get the feature style for the feature row and geometry type
+     *
+     * @param featureRow feature row
+     * @return feature style
+     */
+    protected FeatureStyle getFeatureStyle(FeatureRow featureRow) {
+        FeatureStyle featureStyle = null;
+        if (featureTableStyles != null) {
+            featureStyle = featureTableStyles.getFeatureStyle(featureRow);
+        }
+        return featureStyle;
+    }
+
+    /**
+     * Get the feature style for the feature row and geometry type
+     *
+     * @param featureRow   feature row
+     * @param geometryType geometry type
+     * @return feature style
+     */
+    protected FeatureStyle getFeatureStyle(FeatureRow featureRow, GeometryType geometryType) {
+        FeatureStyle featureStyle = null;
+        if (featureTableStyles != null) {
+            featureStyle = featureTableStyles.getFeatureStyle(featureRow, geometryType);
+        }
+        return featureStyle;
+    }
+
+    /**
+     * Get the icon bitmap from the icon row
+     *
+     * @param iconRow icon row
+     * @return icon bitmap
+     */
+    protected Bitmap getIcon(IconRow iconRow) {
+        return iconCache.createIcon(iconRow, density);
+    }
+
+    /**
+     * Get the point paint for the feature style, or return the default paint
+     *
+     * @param featureStyle feature style
+     * @return paint
+     */
+    protected Paint getPointPaint(FeatureStyle featureStyle) {
+
+        Paint paint = getFeatureStylePaint(featureStyle, FeatureDrawType.CIRCLE);
+
+        if (paint == null) {
+            paint = pointPaint;
+        }
+
+        return paint;
+    }
+
+    /**
+     * Get the line paint for the feature style, or return the default paint
+     *
+     * @param featureStyle feature style
+     * @return paint
+     */
+    protected Paint getLinePaint(FeatureStyle featureStyle) {
+
+        Paint paint = getFeatureStylePaint(featureStyle, FeatureDrawType.STROKE);
+
+        if (paint == null) {
+            paint = linePaint;
+        }
+
+        return paint;
+    }
+
+    /**
+     * Get the polygon paint for the feature style, or return the default paint
+     *
+     * @param featureStyle feature style
+     * @return paint
+     */
+    protected Paint getPolygonPaint(FeatureStyle featureStyle) {
+
+        Paint paint = getFeatureStylePaint(featureStyle, FeatureDrawType.STROKE);
+
+        if (paint == null) {
+            paint = polygonPaint;
+        }
+
+        return paint;
+    }
+
+    /**
+     * Get the polygon fill paint for the feature style, or return the default paint
+     *
+     * @param featureStyle feature style
+     * @return paint
+     */
+    protected Paint getPolygonFillPaint(FeatureStyle featureStyle) {
+
+        Paint paint = null;
+
+        boolean hasStyleColor = false;
+
+        if (featureStyle != null) {
+
+            StyleRow style = featureStyle.getStyle();
+
+            if (style != null) {
+
+                if (style.hasFillColor()) {
+                    paint = getStylePaint(style, FeatureDrawType.FILL);
+                } else {
+                    hasStyleColor = style.hasColor();
+                }
+
+            }
+
+        }
+
+        if (paint == null && !hasStyleColor && fillPolygon) {
+            paint = polygonFillPaint;
+        }
+
+        return paint;
+    }
+
+    /**
+     * Get the feature style paint from cache, or create and cache it
+     *
+     * @param featureStyle feature style
+     * @param drawType     draw type
+     * @return feature style paint
+     */
+    private Paint getFeatureStylePaint(FeatureStyle featureStyle, FeatureDrawType drawType) {
+
+        Paint paint = null;
+
+        if (featureStyle != null) {
+
+            StyleRow style = featureStyle.getStyle();
+
+            if (style != null && style.hasColor()) {
+
+                paint = getStylePaint(style, drawType);
+
+            }
+        }
+
+        return paint;
+    }
+
+    /**
+     * Get the style paint from cache, or create and cache it
+     *
+     * @param style    style row
+     * @param drawType draw type
+     * @return paint
+     */
+    private Paint getStylePaint(StyleRow style, FeatureDrawType drawType) {
+
+        Paint paint = featurePaintCache.getPaint(style, drawType);
+
+        if (paint == null) {
+
+            Color color = null;
+            Style paintStyle = null;
+            Float strokeWidth = null;
+
+            switch (drawType) {
+                case CIRCLE:
+                    color = style.getColorOrDefault();
+                    paintStyle = Style.FILL;
+                    break;
+                case STROKE:
+                    color = style.getColorOrDefault();
+                    paintStyle = Style.STROKE;
+                    strokeWidth = this.density * (float) style.getWidthOrDefault();
+                    break;
+                case FILL:
+                    color = style.getFillColor();
+                    paintStyle = Style.FILL;
+                    strokeWidth = this.density * (float) style.getWidthOrDefault();
+                    break;
+                default:
+                    throw new GeoPackageException("Unsupported Draw Type: " + drawType);
+            }
+
+            Paint stylePaint = new Paint();
+            stylePaint.setAntiAlias(true);
+            stylePaint.setStyle(paintStyle);
+            stylePaint.setColor(color.getColorWithAlpha());
+            if (strokeWidth != null) {
+                stylePaint.setStrokeWidth(strokeWidth);
+            }
+
+            synchronized (featurePaintCache) {
+
+                paint = featurePaintCache.getPaint(style, drawType);
+
+                if (paint == null) {
+                    featurePaintCache.setPaint(style, drawType, stylePaint);
+                    paint = stylePaint;
+                }
+
+            }
+        }
+
+        return paint;
+    }
+
+    /**
+     * Determine if the bitmap is a transparent image (must be in expected tile dimensions)
+     *
+     * @param bitmap bitmap
+     * @return true if transparent
+     */
+    protected boolean isTransparent(Bitmap bitmap) {
+        return bitmap != null && emptyImage.sameAs(bitmap);
+    }
+
+    /**
+     * Check if the bitmap was drawn upon (non null and not transparent). Return the same bitmap if drawn, else recycle non null bitmaps and return null
+     *
+     * @param bitmap bitmap
+     * @return drawn bitmap or null
+     */
+    protected Bitmap checkIfDrawn(Bitmap bitmap) {
+        if (isTransparent(bitmap)) {
+            bitmap.recycle();
+            bitmap = null;
+        }
+        return bitmap;
+    }
+
+    /**
+     * Create an empty image for transparent comparison
+     */
+    private void createEmptyImage() {
+        if (emptyImage != null) {
+            emptyImage.recycle();
+        }
+        emptyImage = createNewBitmap();
     }
 
     /**

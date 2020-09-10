@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
 
+import mil.nga.geopackage.GeoPackageException;
 import mil.nga.geopackage.db.CoreSQLUtils;
 import mil.nga.geopackage.db.GeoPackageDataType;
 
@@ -191,6 +192,22 @@ public abstract class UserInvalidCursor<TColumn extends UserColumn, TTable exten
      * {@inheritDoc}
      */
     @Override
+    public String getTableName() {
+        return getTable().getTableName();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public UserColumns<TColumn> getColumns() {
+        return cursor.getColumns();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     public int getCount() {
         return invalidPositions.size();
     }
@@ -216,6 +233,66 @@ public abstract class UserInvalidCursor<TColumn extends UserColumn, TTable exten
             moved = cursor.moveToPosition(invalidPosition);
         }
         return moved;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public Object getValue(int index) {
+        return getValue(getColumns().getColumn(index));
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public Object getValue(String columnName) {
+        return getValue(getColumns().getColumn(columnName));
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public long getId() {
+        long id = -1;
+
+        TColumn pkColumn = getColumns().getPkColumn();
+        if (pkColumn == null) {
+            StringBuilder error = new StringBuilder(
+                    "No primary key column in ");
+            if (getColumns().isCustom()) {
+                error.append("custom specified table columns. ");
+            }
+            error.append("table: " + getColumns().getTableName());
+            if (getColumns().isCustom()) {
+                error.append(", columns: " + getColumns().getColumnNames());
+            }
+            throw new GeoPackageException(error.toString());
+        }
+
+        Object objectValue = getValue(pkColumn);
+        if (objectValue instanceof Number) {
+            id = ((Number) objectValue).longValue();
+        } else {
+            throw new GeoPackageException(
+                    "Primary Key value was not a number. table: "
+                            + getColumns().getTableName() + ", index: "
+                            + pkColumn.getIndex() + ", name: "
+                            + pkColumn.getName() + ", value: " + objectValue);
+        }
+
+        return id;
+    }
+
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public int getColumnCount() {
+        return cursor.getColumnCount();
     }
 
     /**

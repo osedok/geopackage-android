@@ -4,9 +4,13 @@ import android.content.Context;
 
 import mil.nga.geopackage.BoundingBox;
 import mil.nga.geopackage.GeoPackage;
-import mil.nga.geopackage.extension.link.FeatureTileTableLinker;
+import mil.nga.geopackage.extension.nga.link.FeatureTileTableLinker;
+import mil.nga.geopackage.tiles.TileBoundingBoxUtils;
 import mil.nga.geopackage.tiles.TileGenerator;
+import mil.nga.geopackage.tiles.TileGrid;
 import mil.nga.sf.proj.Projection;
+import mil.nga.sf.proj.ProjectionConstants;
+import mil.nga.sf.proj.ProjectionTransform;
 
 /**
  * Creates a set of tiles within a GeoPackage by generating tiles from features
@@ -40,8 +44,136 @@ public class FeatureTileGenerator extends TileGenerator {
      */
     public FeatureTileGenerator(Context context, GeoPackage geoPackage,
                                 String tableName, FeatureTiles featureTiles, int minZoom, int maxZoom, BoundingBox boundingBox, Projection projection) {
-        super(context, geoPackage, tableName, minZoom, maxZoom, boundingBox, projection);
+        this(context, geoPackage, tableName, featureTiles, geoPackage, minZoom, maxZoom,
+                boundingBox, projection);
+    }
+
+    /**
+     * Constructor
+     *
+     * @param context           app context
+     * @param geoPackage        GeoPackage
+     * @param tableName         table name
+     * @param featureTiles      feature tiles
+     * @param featureGeoPackage feature GeoPackage if different from the destination
+     * @param minZoom           min zoom
+     * @param maxZoom           max zoom
+     * @param boundingBox       tiles bounding box
+     * @param projection        tiles projection
+     * @since 3.2.0
+     */
+    public FeatureTileGenerator(Context context, GeoPackage geoPackage, String tableName,
+                                FeatureTiles featureTiles, GeoPackage featureGeoPackage,
+                                int minZoom, int maxZoom, BoundingBox boundingBox,
+                                Projection projection) {
+        super(context, geoPackage, tableName, minZoom, maxZoom, getBoundingBox(
+                featureGeoPackage, featureTiles, boundingBox, projection),
+                projection);
         this.featureTiles = featureTiles;
+    }
+
+    /**
+     * Constructor, find the the bounding box from the feature table
+     *
+     * @param context      app context
+     * @param geoPackage   GeoPackage
+     * @param tableName    table name
+     * @param featureTiles feature tiles
+     * @param minZoom      min zoom
+     * @param maxZoom      max zoom
+     * @param projection   tiles projection
+     * @since 3.2.0
+     */
+    public FeatureTileGenerator(Context context, GeoPackage geoPackage, String tableName,
+                                FeatureTiles featureTiles, int minZoom, int maxZoom,
+                                Projection projection) {
+        this(context, geoPackage, tableName, featureTiles, minZoom, maxZoom, null,
+                projection);
+    }
+
+    /**
+     * Constructor, find the the bounding box from the feature table
+     *
+     * @param context           app context
+     * @param geoPackage        GeoPackage
+     * @param tableName         table name
+     * @param featureTiles      feature tiles
+     * @param featureGeoPackage feature GeoPackage if different from the destination
+     * @param minZoom           min zoom
+     * @param maxZoom           max zoom
+     * @param projection        tiles projection
+     * @since 3.2.0
+     */
+    public FeatureTileGenerator(Context context, GeoPackage geoPackage, String tableName,
+                                FeatureTiles featureTiles, GeoPackage featureGeoPackage,
+                                int minZoom, int maxZoom, Projection projection) {
+        this(context, geoPackage, tableName, featureTiles, featureGeoPackage, minZoom,
+                maxZoom, null, projection);
+    }
+
+    /**
+     * Get the bounding box for the feature tile generator, from the provided
+     * and from the feature table
+     *
+     * @param geoPackage   GeoPackage
+     * @param featureTiles feature tiles
+     * @param boundingBox  bounding box
+     * @param projection   projection
+     * @return bounding box
+     */
+    private static BoundingBox getBoundingBox(GeoPackage geoPackage,
+                                              FeatureTiles featureTiles, BoundingBox boundingBox,
+                                              Projection projection) {
+
+        String tableName = featureTiles.getFeatureDao().getTableName();
+        boolean manualQuery = boundingBox == null;
+        BoundingBox featureBoundingBox = geoPackage.getBoundingBox(projection,
+                tableName, manualQuery);
+        if (featureBoundingBox != null) {
+            if (boundingBox == null) {
+                boundingBox = featureBoundingBox;
+            } else {
+                boundingBox = boundingBox.overlap(featureBoundingBox);
+            }
+        }
+
+        if (boundingBox != null) {
+            boundingBox = featureTiles.expandBoundingBox(boundingBox,
+                    projection);
+        }
+
+        return boundingBox;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public BoundingBox getBoundingBox(int zoom) {
+
+        ProjectionTransform projectionToWebMercator = projection
+                .getTransformation(ProjectionConstants.EPSG_WEB_MERCATOR);
+        BoundingBox webMercatorBoundingBox = boundingBox
+                .transform(projectionToWebMercator);
+
+        TileGrid tileGrid = TileBoundingBoxUtils.getTileGrid(webMercatorBoundingBox, zoom);
+        BoundingBox tileBoundingBox = TileBoundingBoxUtils.getWebMercatorBoundingBox(
+                tileGrid.getMinX(), tileGrid.getMinY(), zoom);
+
+        BoundingBox expandedBoundingBox = featureTiles.expandBoundingBox(webMercatorBoundingBox, tileBoundingBox);
+
+        BoundingBox zoomBoundingBox = expandedBoundingBox.transform(projectionToWebMercator.getInverseTransformation());
+
+        return zoomBoundingBox;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void close() {
+        featureTiles.close();
+        super.close();
     }
 
     /**

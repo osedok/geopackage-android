@@ -11,9 +11,9 @@ import mil.nga.geopackage.attributes.AttributesCursor;
 import mil.nga.geopackage.attributes.AttributesDao;
 import mil.nga.geopackage.attributes.AttributesRow;
 import mil.nga.geopackage.attributes.AttributesTable;
-import mil.nga.geopackage.core.contents.Contents;
-import mil.nga.geopackage.core.contents.ContentsDao;
-import mil.nga.geopackage.core.contents.ContentsDataType;
+import mil.nga.geopackage.contents.Contents;
+import mil.nga.geopackage.contents.ContentsDao;
+import mil.nga.geopackage.contents.ContentsDataType;
 import mil.nga.geopackage.db.GeoPackageDataType;
 import mil.nga.geopackage.extension.related.ExtendedRelation;
 import mil.nga.geopackage.extension.related.ExtendedRelationsDao;
@@ -24,6 +24,7 @@ import mil.nga.geopackage.extension.related.UserMappingTable;
 import mil.nga.geopackage.extension.related.simple.SimpleAttributesDao;
 import mil.nga.geopackage.extension.related.simple.SimpleAttributesRow;
 import mil.nga.geopackage.extension.related.simple.SimpleAttributesTable;
+import mil.nga.geopackage.extension.related.simple.SimpleAttributesTableMetadata;
 import mil.nga.geopackage.test.extension.related.RelatedTablesUtils;
 import mil.nga.geopackage.user.custom.UserCustomColumn;
 import mil.nga.geopackage.user.custom.UserCustomCursor;
@@ -41,6 +42,11 @@ public class RelatedSimpleAttributesUtils {
 
         // Create a related tables extension
         RelatedTablesExtension rte = new RelatedTablesExtension(geoPackage);
+
+        if (rte.has()) {
+            rte.removeExtension();
+        }
+
         TestCase.assertFalse(rte.has());
         TestCase.assertTrue(rte.getRelationships().isEmpty());
 
@@ -54,27 +60,27 @@ public class RelatedSimpleAttributesUtils {
 
         // Validate nullable non simple columns
         try {
-            SimpleAttributesTable.create("simple_table", RelatedTablesUtils
-                    .createAdditionalUserColumns(SimpleAttributesTable
-                            .numRequiredColumns()));
+            SimpleAttributesTable.create(
+                    SimpleAttributesTableMetadata.create("simple_table", RelatedTablesUtils
+                            .createAdditionalUserColumns()));
             TestCase.fail("Simple Attributes Table created with nullable non simple columns");
         } catch (Exception e) {
             // pass
         }
         // Validate non nullable non simple columns
         try {
-            SimpleAttributesTable.create("simple_table", RelatedTablesUtils
-                    .createAdditionalUserColumns(
-                            SimpleAttributesTable.numRequiredColumns(), true));
+            SimpleAttributesTable.create(
+                    SimpleAttributesTableMetadata.create("simple_table", RelatedTablesUtils
+                            .createAdditionalUserColumns(true)));
             TestCase.fail("Simple Attributes Table created with non nullable non simple columns");
         } catch (Exception e) {
             // pass
         }
         // Validate nullable simple columns
         try {
-            SimpleAttributesTable.create("simple_table", RelatedTablesUtils
-                    .creatSimpleUserColumns(
-                            SimpleAttributesTable.numRequiredColumns(), false));
+            SimpleAttributesTable.create(
+                    SimpleAttributesTableMetadata.create("simple_table", RelatedTablesUtils
+                            .createSimpleUserColumns(false)));
             TestCase.fail("Simple Attributes Table created with nullable simple columns");
         } catch (Exception e) {
             // pass
@@ -82,10 +88,9 @@ public class RelatedSimpleAttributesUtils {
 
         // Populate and validate a simple attributes table
         List<UserCustomColumn> simpleUserColumns = RelatedTablesUtils
-                .creatSimpleUserColumns(SimpleAttributesTable
-                        .numRequiredColumns());
+                .createSimpleUserColumns();
         SimpleAttributesTable simpleTable = SimpleAttributesTable.create(
-                "simple_table", simpleUserColumns);
+                SimpleAttributesTableMetadata.create("simple_table", simpleUserColumns));
         String[] simpleColumns = simpleTable.getColumnNames();
         TestCase.assertEquals(SimpleAttributesTable.numRequiredColumns()
                 + simpleUserColumns.size(), simpleColumns.length);
@@ -99,8 +104,7 @@ public class RelatedSimpleAttributesUtils {
 
         // Create and validate a mapping table
         List<UserCustomColumn> additionalMappingColumns = RelatedTablesUtils
-                .createAdditionalUserColumns(UserMappingTable
-                        .numRequiredColumns());
+                .createAdditionalUserColumns();
         final String mappingTableName = "attributes_simple_attributes";
         UserMappingTable userMappingTable = UserMappingTable.create(
                 mappingTableName, additionalMappingColumns);
@@ -141,19 +145,16 @@ public class RelatedSimpleAttributesUtils {
         TestCase.assertNotNull(extendedRelation);
         List<ExtendedRelation> extendedRelations = rte.getRelationships();
         TestCase.assertEquals(1, extendedRelations.size());
-        TestCase.assertTrue(geoPackage.getDatabase().tableExists(
-                mappingTableName));
-        TestCase.assertTrue(geoPackage.getDatabase().tableExists(
-                simpleTable.getTableName()));
+        TestCase.assertTrue(geoPackage.isTable(mappingTableName));
+        TestCase.assertTrue(geoPackage.isTable(simpleTable.getTableName()));
         TestCase.assertTrue(contentsDao.getTables().contains(
                 simpleTable.getTableName()));
         validateContents(simpleTable,
                 contentsDao.queryForId(simpleTable.getTableName()));
-        TestCase.assertEquals(SimpleAttributesTable.RELATION_TYPE.getName(),
+        TestCase.assertEquals(SimpleAttributesTable.RELATION_TYPE.getDataType(),
                 geoPackage.getTableType(simpleTable.getTableName()));
-        TestCase.assertTrue(geoPackage.isTableType(
-                SimpleAttributesTable.RELATION_TYPE.getName(),
-                simpleTable.getTableName()));
+        TestCase.assertTrue(geoPackage.isTableType(simpleTable.getTableName(),
+                SimpleAttributesTable.RELATION_TYPE.getDataType()));
 
         // Validate the simple attributes DAO
         SimpleAttributesDao simpleDao = rte.getSimpleAttributesDao(simpleTable);
@@ -384,7 +385,7 @@ public class RelatedSimpleAttributesUtils {
             TestCase.assertEquals(ContentsDataType.ATTRIBUTES,
                     attributesContents.getDataType());
             TestCase.assertEquals(ContentsDataType.ATTRIBUTES.getName(),
-                    attributesContents.getDataTypeString());
+                    attributesContents.getDataTypeName());
             TestCase.assertEquals(attributesTable.getTableName(),
                     attributesContents.getTableName());
             TestCase.assertNotNull(attributesContents.getLastChange());
@@ -427,7 +428,7 @@ public class RelatedSimpleAttributesUtils {
         TestCase.assertFalse(rte.has(userMappingTable.getTableName()));
         extendedRelations = rte.getRelationships();
         TestCase.assertEquals(0, extendedRelations.size());
-        TestCase.assertFalse(geoPackage.getDatabase().tableExists(
+        TestCase.assertFalse(geoPackage.isTable(
                 mappingTableName));
 
         // Delete the simple attributes table and contents row
@@ -453,9 +454,13 @@ public class RelatedSimpleAttributesUtils {
     private static void validateContents(
             SimpleAttributesTable simpleAttributesTable, Contents contents) {
         TestCase.assertNotNull(contents);
-        TestCase.assertNull(contents.getDataType());
-        TestCase.assertEquals(SimpleAttributesTable.RELATION_TYPE.getName(),
-                contents.getDataTypeString());
+        TestCase.assertNotNull(contents.getDataType());
+        TestCase.assertEquals(
+                SimpleAttributesTable.RELATION_TYPE.getDataType(), contents
+                        .getDataType().getName());
+        TestCase.assertEquals(
+                SimpleAttributesTable.RELATION_TYPE.getDataType(),
+                contents.getDataTypeName());
         TestCase.assertEquals(simpleAttributesTable.getTableName(),
                 contents.getTableName());
         TestCase.assertNotNull(contents.getLastChange());

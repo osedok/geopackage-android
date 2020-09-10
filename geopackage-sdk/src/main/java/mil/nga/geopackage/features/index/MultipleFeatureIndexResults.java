@@ -74,11 +74,14 @@ public class MultipleFeatureIndexResults implements FeatureIndexResults {
     @Override
     public Iterator<FeatureRow> iterator() {
 
-        Iterator<FeatureRow> iterator = new Iterator<FeatureRow>() {
+        return new Iterator<FeatureRow>() {
 
             int index = -1;
             private Iterator<FeatureRow> currentResults = null;
 
+            /**
+             * {@inheritDoc}
+             */
             @Override
             public boolean hasNext() {
                 boolean hasNext = false;
@@ -102,6 +105,9 @@ public class MultipleFeatureIndexResults implements FeatureIndexResults {
                 return hasNext;
             }
 
+            /**
+             * {@inheritDoc}
+             */
             @Override
             public FeatureRow next() {
                 FeatureRow row = null;
@@ -110,14 +116,67 @@ public class MultipleFeatureIndexResults implements FeatureIndexResults {
                 }
                 return row;
             }
+        };
+    }
 
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public Iterable<Long> ids() {
+        return new Iterable<Long>() {
+
+            /**
+             * {@inheritDoc}
+             */
             @Override
-            public void remove() {
-                throw new UnsupportedOperationException();
+            public Iterator<Long> iterator() {
+                return new Iterator<Long>() {
+
+                    int index = -1;
+                    private Iterator<Long> currentResults = null;
+
+                    /**
+                     * {@inheritDoc}
+                     */
+                    @Override
+                    public boolean hasNext() {
+                        boolean hasNext = false;
+
+                        if (currentResults != null) {
+                            hasNext = currentResults.hasNext();
+                        }
+
+                        if (!hasNext) {
+
+                            while (!hasNext && ++index < results.size()) {
+
+                                // Get an iterator from the next feature index results
+                                currentResults = results.get(index).ids().iterator();
+                                hasNext = currentResults.hasNext();
+
+                            }
+
+                        }
+
+                        return hasNext;
+                    }
+
+                    /**
+                     * {@inheritDoc}
+                     */
+                    @Override
+                    public Long next() {
+                        Long id = null;
+                        if (currentResults != null) {
+                            id = currentResults.next();
+                        }
+                        return id;
+                    }
+
+                };
             }
         };
-
-        return iterator;
     }
 
 }

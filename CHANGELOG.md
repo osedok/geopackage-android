@@ -4,9 +4,113 @@ Adheres to [Semantic Versioning](http://semver.org/).
 
 ---
 
-## 3.0.3 (TBD)
+## 4.0.1 (TBD)
 
 * TBD
+
+## [4.0.0](https://github.com/ngageoint/geopackage-android/releases/tag/4.0.0) (07-14-2020)
+
+* geopackage-core version 4.0.0
+* tiff version 2.0.2
+* SQLite Android Bindings version 3320300
+* Community extensions decoupling and management, including class repackaging
+* Contents Data Type refactor, core data types and expanded custom data type support
+* DAO options to enable modifying row ids or disable column value type validation
+* Distinct select statement queries and counts
+* GeoPackage DAO by table methods
+* Tile creation projection fix for different projections in the same unit
+* SRS and Projection shortcut methods
+* gradle plugin updated to 4.0.1
+
+## [3.5.0](https://github.com/ngageoint/geopackage-android/releases/tag/3.5.0) (03-10-2020)
+
+* geopackage-core version 3.5.0
+* Tile Generator option to skip pre-existing tiles when updating a GeoPackage
+* XYZ tile rebranding, previously referred to as Google
+* Separation of columns from user tables
+* Queries by specified columns
+* Feature Preview for drawing a single preview tile of features
+* Feature Style Extension fix to use an individual feature style over a default table icon
+* GeoPackageImpl and FeatureIndexGeoPackageResults classes changed to be public
+* Android 29 / Q GeoPackage export methods
+* gradle plugin updated to 3.6.1
+
+## [3.4.0](https://github.com/ngageoint/geopackage-android/releases/tag/3.4.0) (11-14-2019)
+
+* compile SDK version 29
+* geopackage-core version 3.4.0
+* SQLite Android Bindings version 3300100
+* Java 8
+* Feature Index Manager catches and logs index type errors, attempts next index type
+* Fixed out of bounds iteration errors on Manual Feature Query Results and Feature Index List Results
+* Improved Android Bindings SQLite connection support, including read only and on demand only connections
+* RTree, Feature Table Index, Metadata, and Manual Feature Query: feature query and count methods with additional arguments, nested single SQL queries
+* Feature Index Manager, single nested SQL queries for features with additional query argument options
+* Feature Index Results and Metadata Results id iteration shortcut to retrieve id without creating full features
+* Additional connection and DAO query and count methods
+* Additional user result get value and id methods
+* appcompat version 1.1.0
+* gradle plugin updated to 3.5.2
+* gradle version 5.4.1
+
+## [3.3.0](https://github.com/ngageoint/geopackage-android/releases/tag/3.3.0) (07-10-2019)
+
+* geopackage-core version 3.3.0
+* Removed sf-geojson, inherit the dependency
+* Transaction shortcut methods for the GeoPackages, connections, and User DAOs
+* Feature Tiles geometry caching
+* GeoPackage User Custom DAO retrieval
+* Table Readers moved to geopackage-core
+* Automatically enable foreign key checks for new connections without preexisting violations
+* GeoPackage table foreign key check
+* OGC API Features download to GeoPackage support
+* Android Q fix for SQL Utils quote wrap
+* gradle plugin updated to 3.4.2
+* gradle version 5.1.1
+
+## [3.2.0](https://github.com/ngageoint/geopackage-android/releases/tag/3.2.0) (04-02-2019)
+
+* geopackage-core version 3.2.0
+* tiff version 2.0.1
+* sf-geojson version 2.0.1
+* sqlite-android version 3270200
+* NGA [Contents Id](http://ngageoint.github.io/GeoPackage/docs/extensions/contents-id.html) Extension
+* NGA [Feature Style](http://ngageoint.github.io/GeoPackage/docs/extensions/feature-style.html) Extension
+* OGC [Related Tables](http://www.geopackage.org/18-000.html) Extension improvements
+* Feature Tile drawing and generator improvements including scaling, styles, and layering
+* FeatureIndexResults id iteration option in place of reading full feature rows
+* Feature Cache for memory caching feature rows in a single table
+* Feature Cache Tables for memory caching feature rows from multiple single GeoPackage tables
+* GeoPackage app context accessor
+* Feature Row geometry type accessor
+* GeoPackage creation example updates
+* Upgrade to AndroidX support libraries
+* gradle plugin updated to 3.3.2
+* gradle version 4.10.1
+
+## [3.1.0](https://github.com/ngageoint/geopackage-android/releases/tag/3.1.0) (10-04-2018)
+
+* geopackage-core version 3.1.0
+* User Table DAO projected bounding box methods
+* GeoPackage Connection query improvements
+* Cursor Result interface implementation, utilized by UserCursor
+* Feature Indexer and Feature Table Index chunked limit queries when indexing
+* Feature Index Manager support for RTree and Manual queries
+* GeoPackage Database SQLite Android Bindings connection
+* Geometry Metadata Data Source bounding box methods
+* RTree Index Extension read support for querying geometries
+* Handling of SQLite Write Ahead Log and Share Memory files
+* Feature Index Results interface and implementations
+* Feature Row geometry value and envelope methods
+* Feature Table Reader ignore case of geometry column name
+* Manual Feature Queries for unindexed geometries
+* min SDK version updated to 16
+* compile SDK version 28
+* Android support library updated to 28.0.0
+* SQLite Android Bindings version 3240000
+* Android Manifest replace allowBackup as disabled and enable cleartext traffic
+* gradle plugin updated to 3.2.0
+* gradle version 4.6
 
 ## [3.0.2](https://github.com/ngageoint/geopackage-android/releases/tag/3.0.2) (07-27-2018)
 

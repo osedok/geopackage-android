@@ -7,7 +7,7 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.util.Log;
 
-import org.osgeo.proj4j.ProjCoordinate;
+import org.locationtech.proj4j.ProjCoordinate;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -15,8 +15,8 @@ import java.util.List;
 
 import mil.nga.geopackage.BoundingBox;
 import mil.nga.geopackage.GeoPackageException;
-import mil.nga.geopackage.extension.scale.TileScaling;
-import mil.nga.geopackage.extension.scale.TileScalingType;
+import mil.nga.geopackage.extension.nga.scale.TileScaling;
+import mil.nga.geopackage.extension.nga.scale.TileScalingType;
 import mil.nga.geopackage.io.BitmapConverter;
 import mil.nga.geopackage.tiles.TileBoundingBoxAndroidUtils;
 import mil.nga.geopackage.tiles.TileBoundingBoxUtils;
@@ -78,9 +78,14 @@ public class TileCreator {
     private final BoundingBox tileSetBoundingBox;
 
     /**
-     * Flag indicating the the tile and request projections are the same
+     * Flag indicating if the tile and request projections are the same
      */
     private final boolean sameProjection;
+
+    /**
+     * Flag indicating if the tile and request projection units are the same
+     */
+    private final boolean sameUnit;
 
     /**
      * Tile Scaling options
@@ -102,11 +107,12 @@ public class TileCreator {
         this.requestProjection = requestProjection;
 
         tileMatrixSet = tileDao.getTileMatrixSet();
-        tilesProjection = tileDao.getTileMatrixSet().getSrs().getProjection();
+        tilesProjection = tileDao.getProjection();
         tileSetBoundingBox = tileMatrixSet.getBoundingBox();
 
-        // Check if the projections have the same units
-        sameProjection = (requestProjection.getUnit().name.equals(tilesProjection.getUnit().name));
+        // Check if the projections are the same or have the same units
+        sameProjection = requestProjection.equals(tilesProjection);
+        sameUnit = (requestProjection.getUnit().name.equals(tilesProjection.getUnit().name));
     }
 
     /**
@@ -212,6 +218,16 @@ public class TileCreator {
     }
 
     /**
+     * Is the request and tile projection the same unit
+     *
+     * @return true if the same
+     * @since 4.0.0
+     */
+    public boolean isSameUnit() {
+        return sameUnit;
+    }
+
+    /**
      * Get the tile scaling options
      *
      * @return tile scaling options
@@ -303,7 +319,7 @@ public class TileCreator {
                         // Determine the size of the tile to initially draw
                         int tileWidth = requestedTileWidth;
                         int tileHeight = requestedTileHeight;
-                        if (!sameProjection) {
+                        if (!sameUnit) {
                             tileWidth = (int) Math.round(
                                     (requestProjectedBoundingBox.getMaxLongitude() - requestProjectedBoundingBox.getMinLongitude())
                                             / tileMatrix.getPixelXSize());
@@ -379,8 +395,7 @@ public class TileCreator {
 
             // Get the bounding box where the requested image and
             // tile overlap
-            BoundingBox overlap = TileBoundingBoxUtils.overlap(
-                    requestProjectedBoundingBox,
+            BoundingBox overlap = requestProjectedBoundingBox.overlap(
                     tileBoundingBox);
 
             // If the tile overlaps with the requested box
@@ -487,8 +502,9 @@ public class TileCreator {
         List<TileMatrix> tileMatrices = new ArrayList<>();
 
         // Check if the request overlaps the tile matrix set
-        if (TileBoundingBoxUtils.overlap(projectedRequestBoundingBox,
-                tileSetBoundingBox) != null) {
+        if (!tileDao.getTileMatrices().isEmpty()
+                && projectedRequestBoundingBox.intersects(
+                tileSetBoundingBox)) {
 
             // Get the tile distance
             double distanceWidth = projectedRequestBoundingBox

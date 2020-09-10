@@ -1,15 +1,22 @@
 package mil.nga.geopackage;
 
+import android.content.Context;
 import android.database.Cursor;
 
 import mil.nga.geopackage.attributes.AttributesDao;
-import mil.nga.geopackage.core.contents.Contents;
+import mil.nga.geopackage.attributes.AttributesTable;
+import mil.nga.geopackage.contents.Contents;
 import mil.nga.geopackage.db.GeoPackageConnection;
-import mil.nga.geopackage.factory.GeoPackageCursorWrapper;
+import mil.nga.geopackage.db.GeoPackageCursorFactory;
+import mil.nga.geopackage.db.GeoPackageCursorWrapper;
 import mil.nga.geopackage.features.columns.GeometryColumns;
 import mil.nga.geopackage.features.user.FeatureDao;
+import mil.nga.geopackage.features.user.FeatureTable;
 import mil.nga.geopackage.tiles.matrixset.TileMatrixSet;
 import mil.nga.geopackage.tiles.user.TileDao;
+import mil.nga.geopackage.tiles.user.TileTable;
+import mil.nga.geopackage.user.custom.UserCustomDao;
+import mil.nga.geopackage.user.custom.UserCustomTable;
 
 /**
  * A single GeoPackage database connection
@@ -17,6 +24,14 @@ import mil.nga.geopackage.tiles.user.TileDao;
  * @author osbornb
  */
 public interface GeoPackage extends GeoPackageCore {
+
+    /**
+     * Get the cursor factory
+     *
+     * @return cursor factory
+     * @since 3.4.0
+     */
+    public GeoPackageCursorFactory getCursorFactory();
 
     /**
      * Register a GeoPackage Cursor Wrapper for table name
@@ -44,6 +59,15 @@ public interface GeoPackage extends GeoPackageCore {
     public FeatureDao getFeatureDao(Contents contents);
 
     /**
+     * Get a Feature DAO from a table
+     *
+     * @param table feature table
+     * @return feature dao
+     * @since 4.0.0
+     */
+    public FeatureDao getFeatureDao(FeatureTable table);
+
+    /**
      * Get a Feature DAO from a table name
      *
      * @param tableName table name
@@ -68,6 +92,15 @@ public interface GeoPackage extends GeoPackageCore {
     public TileDao getTileDao(Contents contents);
 
     /**
+     * Get a Tile DAO from a table
+     *
+     * @param table tile table
+     * @return tile dao
+     * @since 4.0.0
+     */
+    public TileDao getTileDao(TileTable table);
+
+    /**
      * Get a Tile DAO from a table name
      *
      * @param tableName table name
@@ -85,6 +118,15 @@ public interface GeoPackage extends GeoPackageCore {
     public AttributesDao getAttributesDao(Contents contents);
 
     /**
+     * Get an Attributes DAO from a table
+     *
+     * @param table attributes table
+     * @return attributes dao
+     * @since 4.0.0
+     */
+    public AttributesDao getAttributesDao(AttributesTable table);
+
+    /**
      * Get an Attributes DAO from a table name
      *
      * @param tableName table name
@@ -92,6 +134,24 @@ public interface GeoPackage extends GeoPackageCore {
      * @since 1.3.1
      */
     public AttributesDao getAttributesDao(String tableName);
+
+    /**
+     * Get a User Custom DAO from a table name
+     *
+     * @param tableName table name
+     * @return user custom dao
+     * @since 3.3.0
+     */
+    public UserCustomDao getUserCustomDao(String tableName);
+
+    /**
+     * Get a User Custom DAO from a table
+     *
+     * @param table table
+     * @return user custom dao
+     * @since 3.4.0
+     */
+    public UserCustomDao getUserCustomDao(UserCustomTable table);
 
     /**
      * Perform a raw query on the database
@@ -112,12 +172,29 @@ public interface GeoPackage extends GeoPackageCore {
     public GeoPackageConnection getConnection();
 
     /**
+     * Get the application context
+     *
+     * @return context
+     * @since 3.2.0
+     */
+    public Context getContext();
+
+    /**
      * Perform a foreign key check on the database
      *
      * @return null if check passed, open cursor with results if failed
      * @since 1.2.1
      */
     public Cursor foreignKeyCheck();
+
+    /**
+     * Perform a foreign key check on the database table
+     *
+     * @param tableName table name
+     * @return null if check passed, open cursor with results if failed
+     * @since 3.3.0
+     */
+    public Cursor foreignKeyCheck(String tableName);
 
     /**
      * Perform an integrity check on the database

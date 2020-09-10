@@ -5,8 +5,9 @@ import android.database.Cursor;
 import com.j256.ormlite.android.AndroidConnectionSource;
 import com.j256.ormlite.support.ConnectionSource;
 
-import java.util.ArrayList;
 import java.util.List;
+
+import mil.nga.geopackage.GeoPackageException;
 
 /**
  * GeoPackage Android Connection wrapper
@@ -16,19 +17,9 @@ import java.util.List;
 public class GeoPackageConnection extends GeoPackageCoreConnection {
 
     /**
-     * Name column
-     */
-    private static final String NAME_COLUMN = "name";
-
-    /**
      * Database connection
      */
     private final GeoPackageDatabase db;
-
-    /**
-     * Connection source
-     */
-    private final ConnectionSource connectionSource;
 
     /**
      * Constructor
@@ -36,8 +27,51 @@ public class GeoPackageConnection extends GeoPackageCoreConnection {
      * @param db GeoPackage connection
      */
     public GeoPackageConnection(GeoPackageDatabase db) {
+        super(new AndroidConnectionSource(db.getDb()));
         this.db = db;
-        this.connectionSource = new AndroidConnectionSource(db.getDb());
+    }
+
+    /**
+     * Copy Constructor
+     *
+     * @param connection GeoPackage connection
+     * @since 3.4.0
+     */
+    public GeoPackageConnection(GeoPackageConnection connection) {
+        this(connection, connection.db);
+    }
+
+    /**
+     * Copy Constructor
+     *
+     * @param connection GeoPackage connection
+     * @param db         database
+     * @since 3.4.0
+     */
+    public GeoPackageConnection(GeoPackageConnection connection, GeoPackageDatabase db) {
+        super(connection);
+        this.db = db;
+    }
+
+    /**
+     * Copy method
+     *
+     * @return connection
+     * @since 3.4.0
+     */
+    public GeoPackageConnection copy() {
+        return new GeoPackageConnection(this);
+    }
+
+    /**
+     * Copy method with provided database
+     *
+     * @param db database
+     * @return connection
+     * @since 3.4.0
+     */
+    public GeoPackageConnection copy(GeoPackageDatabase db) {
+        return new GeoPackageConnection(this, db);
     }
 
     /**
@@ -47,6 +81,17 @@ public class GeoPackageConnection extends GeoPackageCoreConnection {
      */
     public GeoPackageDatabase getDb() {
         return db;
+    }
+
+    /**
+     * Set the active SQLite connection as the bindings or standard
+     *
+     * @param useBindings true to use bindings connection, false for standard
+     * @return previous bindings value
+     * @since 3.4.0
+     */
+    public boolean setUseBindings(boolean useBindings) {
+        return db.setUseBindings(useBindings);
     }
 
     /**
@@ -69,6 +114,38 @@ public class GeoPackageConnection extends GeoPackageCoreConnection {
      * {@inheritDoc}
      */
     @Override
+    public void beginTransaction() {
+        db.beginTransaction();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void endTransaction(boolean successful) {
+        db.endTransaction(successful);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void commit() {
+        endAndBeginTransaction();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public boolean inTransaction() {
+        return db.inTransaction();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     public int delete(String table, String whereClause, String[] whereArgs) {
         return db.delete(table, whereClause, whereArgs);
     }
@@ -77,93 +154,8 @@ public class GeoPackageConnection extends GeoPackageCoreConnection {
      * {@inheritDoc}
      */
     @Override
-    public int count(String table, String where, String[] args) {
-
-        StringBuilder countQuery = new StringBuilder();
-        countQuery.append("select count(*) from ").append(CoreSQLUtils.quoteWrap(table));
-        if (where != null) {
-            countQuery.append(" where ").append(where);
-        }
-        String sql = countQuery.toString();
-
-        int count = singleResultQuery(sql, args);
-
-        return count;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public Integer min(String table, String column, String where, String[] args) {
-
-        Integer min = null;
-        if (count(table, where, args) > 0) {
-            StringBuilder minQuery = new StringBuilder();
-            minQuery.append("select min(").append(CoreSQLUtils.quoteWrap(column)).append(") from ")
-                    .append(CoreSQLUtils.quoteWrap(table));
-            if (where != null) {
-                minQuery.append(" where ").append(where);
-            }
-            String sql = minQuery.toString();
-
-            min = singleResultQuery(sql, args);
-        }
-
-        return min;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public Integer max(String table, String column, String where, String[] args) {
-
-        Integer max = null;
-        if (count(table, where, args) > 0) {
-            StringBuilder maxQuery = new StringBuilder();
-            maxQuery.append("select max(").append(CoreSQLUtils.quoteWrap(column)).append(") from ")
-                    .append(CoreSQLUtils.quoteWrap(table));
-            if (where != null) {
-                maxQuery.append(" where ").append(where);
-            }
-            String sql = maxQuery.toString();
-
-            max = singleResultQuery(sql, args);
-        }
-
-        return max;
-    }
-
-    /**
-     * Query the SQL for a single integer result
-     *
-     * @param sql
-     * @param args
-     * @return int result
-     */
-    private int singleResultQuery(String sql, String[] args) {
-
-        Cursor countCursor = db.rawQuery(sql, args);
-
-        int result = 0;
-        try {
-            if (countCursor.moveToFirst()) {
-                result = countCursor.getInt(0);
-            }
-        } finally {
-            countCursor.close();
-        }
-
-        return result;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
     public void close() {
-        connectionSource.closeQuietly();
+        super.close();
         db.close();
     }
 
@@ -171,84 +163,34 @@ public class GeoPackageConnection extends GeoPackageCoreConnection {
      * {@inheritDoc}
      */
     @Override
-    public boolean columnExists(String tableName, String columnName) {
-
-        boolean exists = false;
-
-        Cursor cursor = rawQuery("PRAGMA table_info(" + CoreSQLUtils.quoteWrap(tableName) + ")", null);
-        try {
-            int nameIndex = cursor.getColumnIndex(NAME_COLUMN);
-            while (cursor.moveToNext()) {
-                String name = cursor.getString(nameIndex);
-                if (columnName.equals(name)) {
-                    exists = true;
-                    break;
-                }
-            }
-        } finally {
-            cursor.close();
-        }
-
-        return exists;
+    public Object querySingleResult(String sql, String[] args, int column,
+                                    GeoPackageDataType dataType) {
+        CursorResult result = wrapQuery(sql, args);
+        Object value = ResultUtils.buildSingleResult(result, column, dataType);
+        return value;
     }
 
     /**
      * {@inheritDoc}
      */
     @Override
-    public String querySingleStringResult(String sql, String[] args) {
-
-        Cursor cursor = db.rawQuery(sql, args);
-
-        String result = null;
-        try {
-            if (cursor.moveToFirst()) {
-                result = cursor.getString(0);
-            }
-        } finally {
-            cursor.close();
-        }
-
-        return result;
+    public List<Object> querySingleColumnResults(String sql, String[] args,
+                                                 int column, GeoPackageDataType dataType, Integer limit) {
+        CursorResult result = wrapQuery(sql, args);
+        List<Object> results = ResultUtils.buildSingleColumnResults(result,
+                column, dataType, limit);
+        return results;
     }
 
     /**
      * {@inheritDoc}
      */
     @Override
-    public Integer querySingleIntResult(String sql, String[] args) {
-
-        Cursor cursor = db.rawQuery(sql, args);
-
-        Integer result = null;
-        try {
-            if (cursor.moveToFirst()) {
-                result = cursor.getInt(0);
-            }
-        } finally {
-            cursor.close();
-        }
-
-        return result;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public List<String> querySingleColumnStringResults(String sql, String[] args) {
-
-        Cursor cursor = db.rawQuery(sql, args);
-
-        List<String> results = new ArrayList<>();
-        try {
-            while (cursor.moveToNext()) {
-                results.add(cursor.getString(0));
-            }
-        } finally {
-            cursor.close();
-        }
-
+    public List<List<Object>> queryResults(String sql, String[] args,
+                                           GeoPackageDataType[] dataTypes, Integer limit) {
+        CursorResult result = wrapQuery(sql, args);
+        List<List<Object>> results = ResultUtils.buildResults(result,
+                dataTypes, limit);
         return results;
     }
 
@@ -262,6 +204,19 @@ public class GeoPackageConnection extends GeoPackageCoreConnection {
      */
     public Cursor rawQuery(String sql, String[] args) {
         return db.rawQuery(sql, args);
+    }
+
+    /**
+     * Perform the query and wrap as a result
+     *
+     * @param sql           sql statement
+     * @param selectionArgs selection arguments
+     * @return result
+     * @since 3.1.0
+     */
+    public CursorResult wrapQuery(String sql,
+                                  String[] selectionArgs) {
+        return new CursorResult(rawQuery(sql, selectionArgs));
     }
 
 }

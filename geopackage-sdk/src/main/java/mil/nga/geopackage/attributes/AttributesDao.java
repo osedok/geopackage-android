@@ -2,9 +2,10 @@ package mil.nga.geopackage.attributes;
 
 import mil.nga.geopackage.BoundingBox;
 import mil.nga.geopackage.GeoPackageException;
-import mil.nga.geopackage.core.contents.Contents;
+import mil.nga.geopackage.contents.Contents;
 import mil.nga.geopackage.db.GeoPackageConnection;
 import mil.nga.geopackage.user.UserDao;
+import mil.nga.sf.proj.Projection;
 
 /**
  * Attributes DAO for reading attributes user data tables
@@ -24,16 +25,15 @@ public class AttributesDao
     /**
      * Constructor
      *
-     * @param database     database
-     * @param db           db connection
-     * @param attributesDb attributes connection
-     * @param table        attributes table
+     * @param database database
+     * @param db       db connection
+     * @param table    attributes table
      */
     public AttributesDao(String database, GeoPackageConnection db,
-                         AttributesConnection attributesDb, AttributesTable table) {
-        super(database, db, attributesDb, table);
+                         AttributesTable table) {
+        super(database, db, new AttributesConnection(db), table);
 
-        this.attributesDb = attributesDb;
+        this.attributesDb = (AttributesConnection) getUserDb();
         if (table.getContents() == null) {
             throw new GeoPackageException(AttributesTable.class.getSimpleName()
                     + " " + table.getTableName() + " has null "
@@ -43,11 +43,19 @@ public class AttributesDao
 
     /**
      * {@inheritDoc}
-     *
      * Not supported for Attributes
      */
     @Override
     public BoundingBox getBoundingBox() {
+        throw new GeoPackageException(
+                "Bounding Box not supported for Attributes");
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public BoundingBox getBoundingBox(Projection projection) {
         throw new GeoPackageException(
                 "Bounding Box not supported for Attributes");
     }

@@ -14,19 +14,21 @@ public class AttributesRow extends UserRow<AttributesColumn, AttributesTable> {
      * Constructor
      *
      * @param table       attributes table
+     * @param columns     columns
      * @param columnTypes column types
      * @param values      values
+     * @since 3.5.0
      */
-    AttributesRow(AttributesTable table, int[] columnTypes, Object[] values) {
-        super(table, columnTypes, values);
+    AttributesRow(AttributesTable table, AttributesColumns columns, int[] columnTypes, Object[] values) {
+        super(table, columns, columnTypes, values);
     }
 
     /**
      * Constructor to create an empty row
      *
-     * @param table
+     * @param table attributes table
      */
-    AttributesRow(AttributesTable table) {
+    protected AttributesRow(AttributesTable table) {
         super(table);
     }
 
@@ -38,6 +40,14 @@ public class AttributesRow extends UserRow<AttributesColumn, AttributesTable> {
      */
     public AttributesRow(AttributesRow attributesRow) {
         super(attributesRow);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public AttributesColumns getColumns() {
+        return (AttributesColumns) super.getColumns();
     }
 
     /**

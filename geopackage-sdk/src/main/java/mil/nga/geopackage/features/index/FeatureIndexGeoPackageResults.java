@@ -4,8 +4,8 @@ import com.j256.ormlite.dao.CloseableIterator;
 
 import java.util.Iterator;
 
-import mil.nga.geopackage.extension.index.FeatureTableIndex;
-import mil.nga.geopackage.extension.index.GeometryIndex;
+import mil.nga.geopackage.extension.nga.index.FeatureTableIndex;
+import mil.nga.geopackage.extension.nga.index.GeometryIndex;
 import mil.nga.geopackage.features.user.FeatureRow;
 
 /**
@@ -15,7 +15,7 @@ import mil.nga.geopackage.features.user.FeatureRow;
  * @author osbornb
  * @since 1.1.0
  */
-class FeatureIndexGeoPackageResults implements FeatureIndexResults {
+public class FeatureIndexGeoPackageResults implements FeatureIndexResults {
 
     /**
      * Feature Table Index, for indexing within a GeoPackage extension
@@ -35,9 +35,9 @@ class FeatureIndexGeoPackageResults implements FeatureIndexResults {
     /**
      * Constructor
      *
-     * @param featureTableIndex
-     * @param count
-     * @param geometryIndices
+     * @param featureTableIndex feature table index
+     * @param count             count
+     * @param geometryIndices   geometry indices
      */
     public FeatureIndexGeoPackageResults(FeatureTableIndex featureTableIndex, long count, CloseableIterator<GeometryIndex> geometryIndices) {
         this.featureTableIndex = featureTableIndex;
@@ -50,26 +50,26 @@ class FeatureIndexGeoPackageResults implements FeatureIndexResults {
      */
     @Override
     public Iterator<FeatureRow> iterator() {
-        Iterator<FeatureRow> iterator = new Iterator<FeatureRow>() {
+        return new Iterator<FeatureRow>() {
 
+            /**
+             * {@inheritDoc}
+             */
             @Override
             public boolean hasNext() {
                 return geometryIndices.hasNext();
             }
 
+            /**
+             * {@inheritDoc}
+             */
             @Override
             public FeatureRow next() {
                 GeometryIndex geometryIndex = geometryIndices.next();
                 FeatureRow featureRow = featureTableIndex.getFeatureRow(geometryIndex);
                 return featureRow;
             }
-
-            @Override
-            public void remove() {
-                throw new UnsupportedOperationException();
-            }
         };
-        return iterator;
     }
 
     /**
@@ -86,6 +86,41 @@ class FeatureIndexGeoPackageResults implements FeatureIndexResults {
     @Override
     public void close() {
         geometryIndices.closeQuietly();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public Iterable<Long> ids() {
+        return new Iterable<Long>() {
+
+            /**
+             * {@inheritDoc}
+             */
+            @Override
+            public Iterator<Long> iterator() {
+                return new Iterator<Long>() {
+
+                    /**
+                     * {@inheritDoc}
+                     */
+                    @Override
+                    public boolean hasNext() {
+                        return geometryIndices.hasNext();
+                    }
+
+                    /**
+                     * {@inheritDoc}
+                     */
+                    @Override
+                    public Long next() {
+                        return geometryIndices.next().getGeomId();
+                    }
+
+                };
+            }
+        };
     }
 
 }

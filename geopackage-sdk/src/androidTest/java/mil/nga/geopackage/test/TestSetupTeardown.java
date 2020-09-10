@@ -24,27 +24,30 @@ import mil.nga.geopackage.attributes.AttributesColumn;
 import mil.nga.geopackage.attributes.AttributesDao;
 import mil.nga.geopackage.attributes.AttributesRow;
 import mil.nga.geopackage.attributes.AttributesTable;
-import mil.nga.geopackage.core.contents.Contents;
-import mil.nga.geopackage.core.contents.ContentsDao;
-import mil.nga.geopackage.core.contents.ContentsDataType;
-import mil.nga.geopackage.core.srs.SpatialReferenceSystem;
-import mil.nga.geopackage.core.srs.SpatialReferenceSystemDao;
+import mil.nga.geopackage.attributes.AttributesTableMetadata;
+import mil.nga.geopackage.contents.Contents;
+import mil.nga.geopackage.contents.ContentsDao;
+import mil.nga.geopackage.contents.ContentsDataType;
 import mil.nga.geopackage.db.DateConverter;
 import mil.nga.geopackage.db.GeoPackageDataType;
 import mil.nga.geopackage.extension.ExtensionScopeType;
 import mil.nga.geopackage.extension.Extensions;
 import mil.nga.geopackage.extension.ExtensionsDao;
-import mil.nga.geopackage.factory.GeoPackageFactory;
+import mil.nga.geopackage.extension.metadata.Metadata;
+import mil.nga.geopackage.extension.metadata.MetadataDao;
+import mil.nga.geopackage.extension.metadata.MetadataExtension;
+import mil.nga.geopackage.extension.metadata.MetadataScopeType;
+import mil.nga.geopackage.extension.metadata.reference.MetadataReference;
+import mil.nga.geopackage.extension.metadata.reference.MetadataReferenceDao;
+import mil.nga.geopackage.extension.metadata.reference.ReferenceScopeType;
+import mil.nga.geopackage.extension.schema.SchemaExtension;
+import mil.nga.geopackage.GeoPackageFactory;
 import mil.nga.geopackage.features.columns.GeometryColumns;
 import mil.nga.geopackage.features.columns.GeometryColumnsDao;
 import mil.nga.geopackage.features.user.FeatureTable;
 import mil.nga.geopackage.io.BitmapConverter;
-import mil.nga.geopackage.metadata.Metadata;
-import mil.nga.geopackage.metadata.MetadataDao;
-import mil.nga.geopackage.metadata.MetadataScopeType;
-import mil.nga.geopackage.metadata.reference.MetadataReference;
-import mil.nga.geopackage.metadata.reference.MetadataReferenceDao;
-import mil.nga.geopackage.metadata.reference.ReferenceScopeType;
+import mil.nga.geopackage.srs.SpatialReferenceSystem;
+import mil.nga.geopackage.srs.SpatialReferenceSystemDao;
 import mil.nga.geopackage.tiles.matrix.TileMatrix;
 import mil.nga.geopackage.tiles.matrix.TileMatrixDao;
 import mil.nga.geopackage.tiles.matrixset.TileMatrixSet;
@@ -78,7 +81,7 @@ public class TestSetupTeardown {
 
     public static final int CREATE_METADATA_REFERENCE_COUNT = 13;
 
-    public static final int CREATE_EXTENSIONS_COUNT = 5;
+    public static final int CREATE_EXTENSIONS_COUNT = 7;
 
     /**
      * Set up the create database
@@ -147,14 +150,14 @@ public class TestSetupTeardown {
         }
 
         TestCase.assertEquals("Application Id", geoPackage.getApplicationId(), GeoPackageConstants.APPLICATION_ID);
-        TestCase.assertEquals("User Version", geoPackage.getUserVersion(), GeoPackageConstants.USER_VERSION);
+        TestCase.assertEquals("User Version", geoPackage.getUserVersion().intValue(), GeoPackageConstants.USER_VERSION);
         String userVersionString = String.valueOf(geoPackage.getUserVersion());
         String majorVersion = userVersionString.substring(0, userVersionString.length() - 4);
         String minorVersion = userVersionString.substring(userVersionString.length() - 4, userVersionString.length() - 2);
         String patchVersion = userVersionString.substring(userVersionString.length() - 2);
-        TestCase.assertEquals("Major User Version", geoPackage.getUserVersionMajor(), Integer.valueOf(majorVersion).intValue());
-        TestCase.assertEquals("Minor User Version", geoPackage.getUserVersionMinor(), Integer.valueOf(minorVersion).intValue());
-        TestCase.assertEquals("Patch User Version", geoPackage.getUserVersionPatch(), Integer.valueOf(patchVersion).intValue());
+        TestCase.assertEquals("Major User Version", geoPackage.getUserVersionMajor().intValue(), Integer.valueOf(majorVersion).intValue());
+        TestCase.assertEquals("Minor User Version", geoPackage.getUserVersionMinor().intValue(), Integer.valueOf(minorVersion).intValue());
+        TestCase.assertEquals("Patch User Version", geoPackage.getUserVersionPatch().intValue(), Integer.valueOf(patchVersion).intValue());
 
         if (features) {
             setUpCreateFeatures(geoPackage, allowEmptyFeatures);
@@ -179,11 +182,11 @@ public class TestSetupTeardown {
             throws SQLException {
 
         // Metadata
-        geoPackage.createMetadataTable();
-        MetadataDao metadataDao = geoPackage.getMetadataDao();
+        MetadataExtension metadataExtension = new MetadataExtension(geoPackage);
+        metadataExtension.createMetadataTable();
+        MetadataDao metadataDao = metadataExtension.getMetadataDao();
 
         Metadata metadata1 = new Metadata();
-        metadata1.setId(1);
         metadata1.setMetadataScope(MetadataScopeType.DATASET);
         metadata1.setStandardUri("TEST_URI_1");
         metadata1.setMimeType("text/xml");
@@ -191,7 +194,6 @@ public class TestSetupTeardown {
         metadataDao.create(metadata1);
 
         Metadata metadata2 = new Metadata();
-        metadata2.setId(2);
         metadata2.setMetadataScope(MetadataScopeType.FEATURE_TYPE);
         metadata2.setStandardUri("TEST_URI_2");
         metadata2.setMimeType("text/xml");
@@ -199,7 +201,6 @@ public class TestSetupTeardown {
         metadataDao.create(metadata2);
 
         Metadata metadata3 = new Metadata();
-        metadata3.setId(3);
         metadata3.setMetadataScope(MetadataScopeType.TILE);
         metadata3.setStandardUri("TEST_URI_3");
         metadata3.setMimeType("text/xml");
@@ -207,8 +208,8 @@ public class TestSetupTeardown {
         metadataDao.create(metadata3);
 
         // Metadata Reference
-        geoPackage.createMetadataReferenceTable();
-        MetadataReferenceDao metadataReferenceDao = geoPackage
+        metadataExtension.createMetadataReferenceTable();
+        MetadataReferenceDao metadataReferenceDao = metadataExtension
                 .getMetadataReferenceDao();
 
         MetadataReference reference1 = new MetadataReference();
@@ -264,26 +265,26 @@ public class TestSetupTeardown {
         List<AttributesColumn> columns = new ArrayList<AttributesColumn>();
 
         columns.add(AttributesColumn.createColumn(6, "test_text_limited",
-                GeoPackageDataType.TEXT, 5L, false, null));
+                GeoPackageDataType.TEXT, 5L));
         columns.add(AttributesColumn.createColumn(7, "test_blob_limited",
-                GeoPackageDataType.BLOB, 7L, false, null));
+                GeoPackageDataType.BLOB, 7L));
         columns.add(AttributesColumn.createColumn(8, "test_date",
-                GeoPackageDataType.DATE, false, null));
+                GeoPackageDataType.DATE));
         columns.add(AttributesColumn.createColumn(9, "test_datetime",
-                GeoPackageDataType.DATETIME, false, null));
+                GeoPackageDataType.DATETIME));
         columns.add(AttributesColumn.createColumn(1, "test_text",
                 GeoPackageDataType.TEXT, false, ""));
         columns.add(AttributesColumn.createColumn(2, "test_real",
-                GeoPackageDataType.REAL, false, null));
+                GeoPackageDataType.REAL));
         columns.add(AttributesColumn.createColumn(3, "test_boolean",
-                GeoPackageDataType.BOOLEAN, false, null));
+                GeoPackageDataType.BOOLEAN));
         columns.add(AttributesColumn.createColumn(4, "test_blob",
-                GeoPackageDataType.BLOB, false, null));
+                GeoPackageDataType.BLOB));
         columns.add(AttributesColumn.createColumn(5, "test_integer",
-                GeoPackageDataType.INTEGER, false, null));
+                GeoPackageDataType.INTEGER));
 
         AttributesTable attributesTable = geoPackage
-                .createAttributesTableWithId("test_attributes", columns);
+                .createAttributesTable(AttributesTableMetadata.create("test_attributes", columns));
         TestCase.assertNotNull(attributesTable);
         Contents attributesContents = attributesTable.getContents();
         TestCase.assertNotNull(attributesContents);
@@ -295,7 +296,6 @@ public class TestSetupTeardown {
                 attributesTable.getTableName());
 
         Metadata attributesMetadata = new Metadata();
-        attributesMetadata.setId(4);
         attributesMetadata.setMetadataScope(MetadataScopeType.ATTRIBUTE_TYPE);
         attributesMetadata.setStandardUri("ATTRIBUTES_TEST_URI");
         attributesMetadata.setMimeType("text/plain");
@@ -434,10 +434,10 @@ public class TestSetupTeardown {
         polygon2dContents.setIdentifier("polygon2d");
         // polygon2dContents.setDescription("");
         // polygon2dContents.setLastChange(new Date());
-        polygon2dContents.setMinX(0.0);
-        polygon2dContents.setMinY(0.0);
-        polygon2dContents.setMaxX(10.0);
-        polygon2dContents.setMaxY(10.0);
+        polygon2dContents.setMinX(-180.0);
+        polygon2dContents.setMinY(-90.0);
+        polygon2dContents.setMaxX(180.0);
+        polygon2dContents.setMaxY(90.0);
         polygon2dContents.setSrs(undefinedGeographicSrs);
 
         Contents point3dContents = new Contents();
@@ -468,7 +468,7 @@ public class TestSetupTeardown {
         TestUtils.createConstraints(geoPackage);
 
         // Create data columns table
-        geoPackage.createDataColumnsTable();
+        (new SchemaExtension(geoPackage)).createDataColumnsTable();
 
         String geometryColumn = "geometry";
 

@@ -1,5 +1,11 @@
 package mil.nga.geopackage.extension.related.media;
 
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+
+import java.io.IOException;
+
+import mil.nga.geopackage.io.BitmapConverter;
 import mil.nga.geopackage.user.custom.UserCustomColumn;
 import mil.nga.geopackage.user.custom.UserCustomRow;
 
@@ -16,7 +22,7 @@ public class MediaRow extends UserCustomRow {
      *
      * @param table media table
      */
-    MediaRow(MediaTable table) {
+    protected MediaRow(MediaTable table) {
         super(table);
     }
 
@@ -26,7 +32,7 @@ public class MediaRow extends UserCustomRow {
      * @param userCustomRow user custom row
      */
     public MediaRow(UserCustomRow userCustomRow) {
-        super(userCustomRow.getTable(), userCustomRow.getRowColumnTypes(),
+        super(userCustomRow.getTable(), userCustomRow.getColumns(), userCustomRow.getRowColumnTypes(),
                 userCustomRow.getValues());
     }
 
@@ -53,7 +59,7 @@ public class MediaRow extends UserCustomRow {
      * @return id column index
      */
     public int getIdColumnIndex() {
-        return getTable().getIdColumnIndex();
+        return getColumns().getPkColumnIndex();
     }
 
     /**
@@ -62,7 +68,7 @@ public class MediaRow extends UserCustomRow {
      * @return id column
      */
     public UserCustomColumn getIdColumn() {
-        return getTable().getIdColumn();
+        return getColumns().getPkColumn();
     }
 
     /**
@@ -80,7 +86,7 @@ public class MediaRow extends UserCustomRow {
      * @return data column index
      */
     public int getDataColumnIndex() {
-        return getTable().getDataColumnIndex();
+        return getColumns().getColumnIndex(MediaTable.COLUMN_DATA);
     }
 
     /**
@@ -89,7 +95,7 @@ public class MediaRow extends UserCustomRow {
      * @return data column
      */
     public UserCustomColumn getDataColumn() {
-        return getTable().getDataColumn();
+        return getColumns().getColumn(MediaTable.COLUMN_DATA);
     }
 
     /**
@@ -111,12 +117,80 @@ public class MediaRow extends UserCustomRow {
     }
 
     /**
+     * Read the data bounds without allocating pixel memory.
+     * Access values using:
+     * {@link BitmapFactory.Options#outWidth},
+     * {@link BitmapFactory.Options#outHeight},
+     * {@link BitmapFactory.Options#outMimeType},
+     * {@link BitmapFactory.Options#outColorSpace},
+     * and {@link BitmapFactory.Options#outConfig}
+     *
+     * @return bounds options
+     * @since 3.2.0
+     */
+    public BitmapFactory.Options getDataBounds() {
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        byte[] data = getData();
+        BitmapFactory.decodeByteArray(data, 0, data.length, options);
+        return options;
+    }
+
+    /**
+     * Get the data bitmap
+     *
+     * @return data bitmap
+     * @since 3.2.0
+     */
+    public Bitmap getDataBitmap() {
+        return getDataBitmap(null);
+    }
+
+    /**
+     * Get the data bitmap with decoding options
+     *
+     * @param options bitmap options
+     * @return data bitmap
+     * @since 3.2.0
+     */
+    public Bitmap getDataBitmap(BitmapFactory.Options options) {
+        return BitmapConverter.toBitmap(getData(), options);
+    }
+
+    /**
+     * Set the data from a full quality bitmap
+     *
+     * @param bitmap bitmap
+     * @param format compress format
+     * @throws IOException upon failure
+     * @since 3.2.0
+     */
+    public void setData(Bitmap bitmap, Bitmap.CompressFormat format)
+            throws IOException {
+        setData(bitmap, format, 100);
+    }
+
+    /**
+     * Set the data from a bitmap
+     *
+     * @param bitmap  bitmap
+     * @param format  compress format
+     * @param quality quality
+     * @throws IOException upon failure
+     * @since 3.2.0
+     */
+    public void setData(Bitmap bitmap, Bitmap.CompressFormat format, int quality)
+            throws IOException {
+        setData(BitmapConverter.toBytes(bitmap, format, quality));
+    }
+
+    /**
      * Get the content type column index
      *
      * @return content type column index
      */
     public int getContentTypeColumnIndex() {
-        return getTable().getContentTypeColumnIndex();
+        return getColumns().getColumnIndex(MediaTable.COLUMN_CONTENT_TYPE);
     }
 
     /**
@@ -125,7 +199,7 @@ public class MediaRow extends UserCustomRow {
      * @return content type column
      */
     public UserCustomColumn getContentTypeColumn() {
-        return getTable().getContentTypeColumn();
+        return getColumns().getColumn(MediaTable.COLUMN_CONTENT_TYPE);
     }
 
     /**

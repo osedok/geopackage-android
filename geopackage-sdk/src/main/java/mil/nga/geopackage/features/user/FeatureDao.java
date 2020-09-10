@@ -2,14 +2,13 @@ package mil.nga.geopackage.features.user;
 
 import mil.nga.geopackage.BoundingBox;
 import mil.nga.geopackage.GeoPackageException;
-import mil.nga.geopackage.core.contents.Contents;
-import mil.nga.geopackage.core.srs.SpatialReferenceSystem;
+import mil.nga.geopackage.contents.Contents;
 import mil.nga.geopackage.db.GeoPackageConnection;
 import mil.nga.geopackage.features.columns.GeometryColumns;
+import mil.nga.geopackage.srs.SpatialReferenceSystem;
 import mil.nga.geopackage.user.UserDao;
 import mil.nga.sf.GeometryType;
 import mil.nga.sf.proj.Projection;
-import mil.nga.sf.proj.ProjectionTransform;
 
 /**
  * Feature DAO for reading feature user data tables
@@ -33,16 +32,15 @@ public class FeatureDao extends
      * Constructor
      *
      * @param database        database name
-     * @param db              GeoPackage connection
-     * @param featureDb       feature connection
+     * @param db              connection
      * @param geometryColumns geometry columns
      * @param table           feature table
      */
-    public FeatureDao(String database, GeoPackageConnection db, FeatureConnection featureDb, GeometryColumns geometryColumns,
+    public FeatureDao(String database, GeoPackageConnection db, GeometryColumns geometryColumns,
                       FeatureTable table) {
-        super(database, db, featureDb, table);
+        super(database, db, new FeatureConnection(db), table);
 
-        this.featureDb = featureDb;
+        this.featureDb = (FeatureConnection) getUserDb();
         this.geometryColumns = geometryColumns;
         if (geometryColumns.getContents() == null) {
             throw new GeoPackageException(GeometryColumns.class.getSimpleName()
@@ -55,7 +53,27 @@ public class FeatureDao extends
                     + SpatialReferenceSystem.class.getSimpleName());
         }
 
-        projection = geometryColumns.getSrs().getProjection();
+        projection = geometryColumns.getProjection();
+    }
+
+    /**
+     * Constructor, semi copy constructor with separate connection states
+     *
+     * @param featureDao feature dao
+     * @since 3.4.0
+     */
+    public FeatureDao(FeatureDao featureDao) {
+        this(featureDao.getDatabase(), featureDao.getDb(), featureDao.getGeometryColumns(), featureDao.getTable());
+    }
+
+    /**
+     * Copy the feature dao for separate connection states, shares geometry columns and feature table memory
+     *
+     * @return feature dao
+     * @since 3.4.0
+     */
+    public FeatureDao copy() {
+        return new FeatureDao(this);
     }
 
     /**
@@ -63,18 +81,16 @@ public class FeatureDao extends
      */
     @Override
     public BoundingBox getBoundingBox() {
+        return getBoundingBox(projection);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public BoundingBox getBoundingBox(Projection projection) {
         Contents contents = geometryColumns.getContents();
-
-        BoundingBox boundingBox = contents.getBoundingBox();
-        if (boundingBox != null) {
-            Projection contentsProjection = contents.getSrs().getProjection();
-            if (!projection.equals(contentsProjection)) {
-                ProjectionTransform transform = contentsProjection
-                        .getTransformation(projection);
-                boundingBox = boundingBox.transform(transform);
-            }
-        }
-
+        BoundingBox boundingBox = contents.getBoundingBox(projection);
         return boundingBox;
     }
 
@@ -105,7 +121,7 @@ public class FeatureDao extends
     }
 
     /**
-     * The the Geometry Column name
+     * Get the Geometry Column name
      *
      * @return geometry column name
      */
@@ -120,6 +136,56 @@ public class FeatureDao extends
      */
     public GeometryType getGeometryType() {
         return geometryColumns.getGeometryType();
+    }
+
+    /**
+     * Get the Spatial Reference System
+     *
+     * @return srs
+     * @since 4.0.0
+     */
+    public SpatialReferenceSystem getSrs() {
+        return geometryColumns.getSrs();
+    }
+
+    /**
+     * Get the Spatial Reference System id
+     *
+     * @return srs id
+     * @since 4.0.0
+     */
+    public long getSrsId() {
+        return geometryColumns.getSrsId();
+    }
+
+    /**
+     * Get the Id Column
+     *
+     * @return id column
+     * @since 3.5.0
+     */
+    public FeatureColumn getIdColumn() {
+        return getTable().getPkColumn();
+    }
+
+    /**
+     * Get the Id Column name
+     *
+     * @return id column name
+     * @since 3.5.0
+     */
+    public String getIdColumnName() {
+        return getTable().getPkColumnName();
+    }
+
+    /**
+     * Get the Id and Geometry Column names
+     *
+     * @return column names
+     * @since 3.5.0
+     */
+    public String[] getIdAndGeometryColumnNames() {
+        return getTable().getIdAndGeometryColumnNames();
     }
 
 }
